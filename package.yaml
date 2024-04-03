@@ -37,6 +37,7 @@ library:
   source-dirs: src
   dependencies:
     - array
+    - QuickCheck
 
 executables:
   WaveFunctionCollapse-exe:
@@ -59,3 +60,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - WaveFunctionCollapse
+    - hspec
+    - QuickCheck
