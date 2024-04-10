@@ -3,6 +3,7 @@
 
 import Control.Monad
 import qualified Data.Array as Array
+import qualified Data.Map.Strict as Map
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Algorithm.WaveFunctionCollapse
@@ -43,3 +44,7 @@ main = hspec $ do
       it "should not overlap on any others" $ do
         forM_ [Right', Down, Left'] $ \dir -> do
           overlaps p1 p2 dir `shouldBe` False
+
+  describe "frequencyMap" $ do
+    prop "minimum frequency map" $ \(tex :: Texture Int) -> do
+      (frequencyHints $ patterns tex 3) `shouldSatisfy` Map.foldr (\x r -> r && x >= 1) True

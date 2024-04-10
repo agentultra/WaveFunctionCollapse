@@ -37,6 +37,7 @@ library:
   source-dirs: src
   dependencies:
     - array
+    - containers
     - QuickCheck
 
 executables:
@@ -60,6 +61,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - array
+    - containers
     - WaveFunctionCollapse
     - hspec
     - QuickCheck

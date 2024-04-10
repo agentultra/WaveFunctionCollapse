@@ -8,6 +8,8 @@ module Algorithm.WaveFunctionCollapse where
 import Data.Array (Array, (!))
 import qualified Data.Array as Array
 import qualified Data.List as List
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Foldable
 import Data.Maybe
 import Test.QuickCheck
@@ -17,7 +19,7 @@ data Pattern a
   { patternSize :: Word
   , getPattern  :: Array (Word, Word) a
   }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Arbitrary a => Arbitrary (Pattern a) where
   arbitrary = do
@@ -44,7 +46,7 @@ newtype Texture a = Texture { getTexture :: Array (Word, Word) a }
 
 instance Arbitrary a => Arbitrary (Texture a) where
   arbitrary = do
-    s <- chooseInt (1, 100)
+    s <- chooseInt (2, 20)
     xs <- infiniteList
     pure . Texture $ Array.listArray ((0, 0), (toEnum s - 1, toEnum s - 1)) $ take (s * s) xs
 
@@ -122,3 +124,13 @@ clockwise pat
   . List.groupBy (\x y -> (fst . fst $ x) == (fst . fst $ y))
   . Array.assocs
   $ pat.getPattern
+
+frequencyHints :: Ord a => [Pattern a] -> Map Int Int
+frequencyHints ps = go Map.empty ps . zip [0..] $ ps
+  where
+    go :: Ord a => Map Int Int -> [Pattern a] -> [(Int, Pattern a)] -> Map Int Int
+    go accum _ [] = accum
+    go accum ps' ((ix,p):xs) = go (Map.insert ix (seen p ps') accum) ps' xs
+
+    seen :: Eq a => Pattern a -> [Pattern a] -> Int
+    seen x = List.foldl' (\count y -> if x == y then (count + 1) else count) 0
