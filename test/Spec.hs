@@ -10,8 +10,12 @@ import Algorithm.WaveFunctionCollapse
 main :: IO ()
 main = hspec $ do
   describe "patterns" $ do
-    prop "all overlapping patterns" $ \(tex :: Texture Int) ->
+    prop "sum of sub patterns" $ \(tex :: Texture Int) ->
       (length $ patterns tex 3) `shouldBe` fromIntegral ((textureSize tex) * (textureSize tex))
+
+  describe "Pattern" $ do
+    prop "full clockwise rotation" $ \(pat :: Pattern Int) ->
+      (clockwise . clockwise . clockwise . clockwise $ pat) `shouldBe` pat
 
   describe "overlaps" $ do
     context "A fill pattern" $ do

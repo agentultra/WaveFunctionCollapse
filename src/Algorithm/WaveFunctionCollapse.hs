@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -6,6 +7,7 @@ module Algorithm.WaveFunctionCollapse where
 
 import Data.Array (Array, (!))
 import qualified Data.Array as Array
+import qualified Data.List as List
 import Data.Foldable
 import Data.Maybe
 import Test.QuickCheck
@@ -16,6 +18,12 @@ data Pattern a
   , getPattern  :: Array (Word, Word) a
   }
   deriving (Eq, Show)
+
+instance Arbitrary a => Arbitrary (Pattern a) where
+  arbitrary = do
+    s <- chooseInt (1, 10)
+    xs <- infiniteList
+    pure . Pattern (toEnum s) $ Array.listArray ((0, 0), (toEnum s - 1, toEnum s - 1)) $ take (s * s) xs
 
 mkFillPattern :: a -> Word -> Maybe (Pattern a)
 mkFillPattern fillValue size
@@ -103,3 +111,14 @@ overlaps p1 p2 = \case
     in all elemEq $ zip p1Values p2Values
   where
     elemEq (x, y) = x == y
+
+clockwise :: Pattern a -> Pattern a
+clockwise pat
+  = Pattern pat.patternSize
+  . Array.listArray (Array.bounds pat.getPattern)
+  . concat
+  . fmap reverse
+  . fmap (fmap snd)
+  . List.groupBy (\x y -> (fst . fst $ x) == (fst . fst $ y))
+  . Array.assocs
+  $ pat.getPattern
