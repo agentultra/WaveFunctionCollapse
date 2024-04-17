@@ -180,3 +180,22 @@ generateAdjacencyRules patterns' =
       in if overlaps patternA patternB d
          then allow aIx bIx d rs'
          else rs'
+
+newtype ColorMap a = ColorMap { getColorMap :: Map PatternIndex a }
+  deriving (Eq, Show)
+
+emptyColorMap :: ColorMap a
+emptyColorMap = ColorMap Map.empty
+
+generateColorMap :: [Pattern a] -> ColorMap a
+generateColorMap = List.foldl' addPatternElement emptyColorMap . zip [0..]
+  where
+    addPatternElement :: ColorMap a -> (PatternIndex, Pattern a) -> ColorMap a
+    addPatternElement cmap (pIdx, p)
+      = ColorMap
+      . Map.insert pIdx (topLeftOf p)
+      . getColorMap
+      $ cmap
+
+    topLeftOf :: Pattern a -> a
+    topLeftOf Pattern {..} = getPattern Array.! (0, 0)
