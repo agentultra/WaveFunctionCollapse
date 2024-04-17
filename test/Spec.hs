@@ -48,3 +48,8 @@ main = hspec $ do
   describe "frequencyMap" $ do
     prop "minimum frequency map" $ \(tex :: Texture Int) -> do
       (frequencyHints $ patterns tex 3) `shouldSatisfy` Map.foldr (\x r -> r && x >= 1) True
+
+  describe "AdjacencyRules" $ do
+    prop "always allowed" $ \x y d -> do
+      let rules = emptyAdjacencyRules
+      (allowed x y d . allow x y d $ rules) `shouldBe` Just True

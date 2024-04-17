@@ -90,7 +90,10 @@ data Direction
   | Right'
   | Down
   | Left'
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
+
+instance Arbitrary Direction where
+  arbitrary = oneof [pure Up, pure Right', pure Down, pure Left']
 
 -- | Check if two patterns overlap, offset in a given Direction by 1.
 overlaps :: Eq a => Pattern a -> Pattern a -> Direction -> Bool
@@ -134,3 +137,46 @@ frequencyHints ps = go Map.empty ps . zip [0..] $ ps
 
     seen :: Eq a => Pattern a -> [Pattern a] -> Int
     seen x = List.foldl' (\count y -> if x == y then (count + 1) else count) 0
+
+type PatternIndex = Int
+
+data AdjacencyKey
+  = AdjacencyKey
+  { patternA  :: PatternIndex
+  , patternB  :: PatternIndex
+  , direction :: Direction
+  }
+  deriving (Eq, Ord, Show)
+
+newtype AdjacencyRules = AdjacencyRules { getAdjacencyRules :: Map AdjacencyKey Bool }
+
+emptyAdjacencyRules :: AdjacencyRules
+emptyAdjacencyRules = AdjacencyRules Map.empty
+
+allow :: PatternIndex -> PatternIndex -> Direction -> AdjacencyRules -> AdjacencyRules
+allow pA pB dir = AdjacencyRules . Map.insert (AdjacencyKey pA pB dir) True . getAdjacencyRules
+
+allowed :: PatternIndex -> PatternIndex -> Direction -> AdjacencyRules -> Maybe Bool
+allowed pA pB dir = Map.lookup (AdjacencyKey pA pB dir) . getAdjacencyRules
+
+generateAdjacencyRules :: Eq a => [Pattern a] -> AdjacencyRules
+generateAdjacencyRules patterns' =
+  let patternIndices = [ (x, y) | x <- [0..length patterns' - 1], y <- [0..length patterns' - 1]]
+  in List.foldl' addRule emptyAdjacencyRules patternIndices
+  where
+    addRule :: AdjacencyRules -> (PatternIndex, PatternIndex) -> AdjacencyRules
+    addRule rs (aIx, bIx) =
+      foldl' (addRuleFor aIx bIx) rs [Up, Right', Down, Left']
+
+    addRuleFor
+      :: PatternIndex
+      -> PatternIndex
+      -> AdjacencyRules
+      -> Direction
+      -> AdjacencyRules
+    addRuleFor aIx bIx rs' d =
+      let patternA = patterns' List.!! aIx
+          patternB = patterns' List.!! bIx
+      in if overlaps patternA patternB d
+         then allow aIx bIx d rs'
+         else rs'
