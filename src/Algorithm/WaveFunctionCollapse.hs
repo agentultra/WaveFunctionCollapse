@@ -66,14 +66,15 @@ textureSize
   . Array.bounds
   . getTexture
 
-patterns :: Texture a -> Word -> [Pattern a]
+patterns :: Texture a -> Word -> PatternResult a
 patterns texture subPatternSize
-  | subPatternSize == 0 = []
+  | subPatternSize == 0 = PatternResult [] 0
   | otherwise =
     let upTo = textureSize texture - 1
-    in [ extractPattern texture (x, y) subPatternSize
-       | x :: Word <- [0..upTo], y :: Word <- [0..upTo]
-       ]
+        ps = [ extractPattern texture (x, y) subPatternSize
+             | x :: Word <- [0..upTo], y :: Word <- [0..upTo]
+             ]
+    in PatternResult ps (length ps - 1)
   where
     extractPattern :: Texture a -> (Word, Word) -> Word -> Pattern a
     extractPattern (Texture tex) (x, y) size =
@@ -128,8 +129,14 @@ clockwise pat
   . Array.assocs
   $ pat.getPattern
 
-frequencyHints :: Ord a => [Pattern a] -> Map Int Int
-frequencyHints ps = go Map.empty ps . zip [0..] $ ps
+newtype FrequencyHints = FrequencyHints { getFrequencyHints :: Map PatternIndex Int }
+  deriving (Eq, Show)
+
+relativeFrequency :: PatternIndex -> FrequencyHints -> Int
+relativeFrequency ix = maybe 0 id . Map.lookup ix . getFrequencyHints
+
+frequencyHints :: Ord a => [Pattern a] -> FrequencyHints
+frequencyHints ps = FrequencyHints . go Map.empty ps . zip [0..] $ ps
   where
     go :: Ord a => Map Int Int -> [Pattern a] -> [(Int, Pattern a)] -> Map Int Int
     go accum _ [] = accum
@@ -137,6 +144,13 @@ frequencyHints ps = go Map.empty ps . zip [0..] $ ps
 
     seen :: Eq a => Pattern a -> [Pattern a] -> Int
     seen x = List.foldl' (\count y -> if x == y then (count + 1) else count) 0
+
+data PatternResult a
+  = PatternResult
+  { patternResultPatterns :: [Pattern a]
+  , patternResultMaxIndex :: PatternIndex
+  }
+  deriving (Eq, Show)
 
 type PatternIndex = Int
 
@@ -199,3 +213,79 @@ generateColorMap = List.foldl' addPatternElement emptyColorMap . zip [0..]
 
     topLeftOf :: Pattern a -> a
     topLeftOf Pattern {..} = getPattern Array.! (0, 0)
+
+-- For some initialized output grid of cells:
+--   while there are uncollapsed cells:
+--     choose a cell with the lowest entropy:
+--        collapse it (picking a pattern from the possible patterns)
+--        propagate the choice of that cell out to neighbours (across the wave)
+--
+-- Contradiction: when you pick a cell that has no possible patterns to collapse to.
+--   Solutions: give up and start again or backtracking? maybe others?
+
+data Cell
+  = Cell
+  { cellPossibilities        :: Array PatternIndex Bool
+  , cellCollapsed            :: Maybe PatternIndex
+  , cellTotalWeight          :: Float
+  , cellSumOfWeightLogWeight :: Float
+  }
+  deriving (Eq, Show)
+
+-- | Initialize a Cell starting with all patterns as possible values
+-- for the Cell.
+--
+-- As the algorithm proceeds we will eliminate possibilities and
+-- collapse cells.
+mkCell :: PatternResult a -> FrequencyHints -> Cell
+mkCell PatternResult {..} hints
+  = Cell
+  { cellPossibilities        = allPossibilities
+  , cellCollapsed            = Nothing
+  , cellTotalWeight          = totalWeight allPossibilities hints
+  , cellSumOfWeightLogWeight = sumOfWeightLogWeight allPossibilities hints
+  }
+  where
+    allPossibilities
+      = Array.listArray (0, patternResultMaxIndex)
+      $ repeat True
+
+collapsed :: Cell -> Bool
+collapsed cell
+  | isJust cell.cellCollapsed = True
+  | otherwise                 = False
+
+totalPossibleTileFrequency :: Array PatternIndex Bool -> FrequencyHints -> Int
+totalPossibleTileFrequency possibilities hints =
+  foldl' sumPossibleCell 0 $ Array.assocs possibilities
+  where
+    sumPossibleCell :: Int -> (PatternIndex, Bool) -> Int
+    sumPossibleCell count (ix, True) = count + relativeFrequency ix hints
+    sumPossibleCell count (_, False) = count
+
+totalWeight :: Array PatternIndex Bool -> FrequencyHints -> Float
+totalWeight possibilities hints = fromIntegral $ totalPossibleTileFrequency possibilities hints
+
+sumOfWeightLogWeight :: Array PatternIndex Bool -> FrequencyHints -> Float
+sumOfWeightLogWeight possibilities hints
+  = sum . map toLogWeight . Array.assocs $ possibilities
+  where
+    toLogWeight :: (PatternIndex, Bool) -> Float
+    toLogWeight (ix, True) =
+      let rf = fromIntegral $ relativeFrequency ix hints
+      in rf * (logBase 2.0 rf)
+    toLogWeight (_, False) = 0
+
+entropy :: Cell -> Float
+entropy Cell {..} =
+  (logBase 2.0 cellTotalWeight) - (cellSumOfWeightLogWeight / cellTotalWeight)
+
+newtype Grid = Grid { getCells :: Array (Int, Int) Cell }
+  deriving (Eq, Show)
+
+mkGrid :: Ord a => Word -> Word -> PatternResult a -> Grid
+mkGrid w h patternResult =
+  let freqHints = frequencyHints patternResult.patternResultPatterns
+  in Grid
+     . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
+     $ repeat (mkCell patternResult freqHints)

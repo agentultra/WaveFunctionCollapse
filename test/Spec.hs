@@ -12,7 +12,7 @@ main :: IO ()
 main = hspec $ do
   describe "patterns" $ do
     prop "sum of sub patterns" $ \(tex :: Texture Int) ->
-      (length $ patterns tex 3) `shouldBe` fromIntegral ((textureSize tex) * (textureSize tex))
+      (length . patternResultPatterns $ patterns tex 3) `shouldBe` fromIntegral ((textureSize tex) * (textureSize tex))
 
   describe "Pattern" $ do
     prop "full clockwise rotation" $ \(pat :: Pattern Int) ->
@@ -47,7 +47,7 @@ main = hspec $ do
 
   describe "frequencyMap" $ do
     prop "minimum frequency map" $ \(tex :: Texture Int) -> do
-      (frequencyHints $ patterns tex 3) `shouldSatisfy` Map.foldr (\x r -> r && x >= 1) True
+      (getFrequencyHints . frequencyHints . patternResultPatterns $ patterns tex 3) `shouldSatisfy` Map.foldr (\x r -> r && x >= 1) True
 
   describe "AdjacencyRules" $ do
     prop "always allowed" $ \x y d -> do
