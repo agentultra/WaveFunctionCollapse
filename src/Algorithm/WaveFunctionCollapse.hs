@@ -347,7 +347,7 @@ collapseAt cellIx = do
         else pure p
 
     possiblePatterns :: Array PatternIndex Bool -> [PatternIndex]
-    possiblePatterns = Array.indices
+    possiblePatterns = map fst . filter snd . Array.assocs
 
     collapseCellPossibilities
       :: PatternIndex
