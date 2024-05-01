@@ -5,6 +5,7 @@
 
 module Algorithm.WaveFunctionCollapse where
 
+import Control.Monad.State.Strict
 import Data.Array (Array, (!))
 import qualified Data.Array as Array
 import qualified Data.List as List
@@ -12,6 +13,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Foldable
 import Data.Maybe
+import System.Random
 import Test.QuickCheck
 
 data Pattern a
@@ -289,3 +291,84 @@ mkGrid w h patternResult =
   in Grid
      . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
      $ repeat (mkCell patternResult freqHints)
+
+cellAt :: (Int, Int) -> Grid -> Maybe Cell
+cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
+
+data WaveState
+  = WaveState
+  { waveStateGrid           :: Grid
+  , waveStateFrequencyHints :: FrequencyHints
+  , waveStateGen            :: StdGen
+  }
+
+runWave :: WaveState -> State WaveState a -> Grid
+runWave initState wave =
+  let finalState = execState wave initState
+  in finalState.waveStateGrid
+
+collapseAt :: (Int, Int) -> State WaveState ()
+collapseAt cellIx = do
+  WaveState {..} <- get
+  let cells = getCells waveStateGrid
+  case cells `maybeAt` cellIx of
+    Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
+    Just cell -> do
+      collapsedCell <- collapseCell cell
+      let newGrid
+            = Grid
+            $ cells Array.// [(cellIx, collapsedCell)]
+      modify $ \s -> s { waveStateGrid = newGrid }
+  where
+    collapseCell :: Cell -> State WaveState Cell
+    collapseCell c = do
+      patternIx <- pickPatternIx c
+      pure
+        $ Cell
+        { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
+        , cellCollapsed = Just patternIx
+        , cellTotalWeight = 0.0
+        , cellSumOfWeightLogWeight = 0.0
+        }
+
+    pickPatternIx :: Cell -> State WaveState PatternIndex
+    pickPatternIx Cell {..} = do
+      remaining <- randBetween 0 $ floor cellTotalWeight
+      let ps = possiblePatterns cellPossibilities
+      go remaining ps
+
+    go :: Int -> [PatternIndex] -> State WaveState PatternIndex
+    go _ [] = error "Couldn't find a pattern to collapse to."
+    go remainder (p:ps) = do
+      hints <- gets waveStateFrequencyHints
+      let weight = relativeFrequency p hints
+      if remainder >= weight
+        then go (remainder - weight) ps
+        else pure p
+
+    possiblePatterns :: Array PatternIndex Bool -> [PatternIndex]
+    possiblePatterns = Array.indices
+
+    collapseCellPossibilities
+      :: PatternIndex
+      -> Array PatternIndex Bool
+      -> Array PatternIndex Bool
+    collapseCellPossibilities pIx arr =
+      let updatedArrayAssocs = map (keepIfMatches pIx) . Array.assocs $ arr
+      in arr Array.// updatedArrayAssocs
+
+    keepIfMatches pIx (pIx', _)
+      | pIx == pIx' = (pIx', True)
+      | otherwise   = (pIx', False)
+
+maybeAt :: Array.Ix i => Array i e -> i -> Maybe e
+maybeAt arr ix
+  | Array.inRange (Array.bounds arr) ix = Just $ arr Array.! ix
+  | otherwise = Nothing
+
+randBetween :: Int -> Int -> State WaveState Int
+randBetween lo hi = do
+  gen <- gets waveStateGen
+  let (x, gen') = uniformR (lo :: Int, hi :: Int) gen
+  modify $ \s -> s { waveStateGen = gen' }
+  pure x

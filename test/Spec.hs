@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -7,6 +8,7 @@ import qualified Data.Map.Strict as Map
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Algorithm.WaveFunctionCollapse
+import System.Random
 
 main :: IO ()
 main = hspec $ do
@@ -53,3 +55,22 @@ main = hspec $ do
     prop "always allowed" $ \x y d -> do
       let rules = emptyAdjacencyRules
       (allowed x y d . allow x y d $ rules) `shouldBe` Just True
+
+  describe "collapseAt" $ do
+    context "Given a Grid" $ do
+      -- TODO (james): maybe text with arbitrary textures? or a better texture?
+      let testTexture = mkTexture (0 :: Int) 5
+          patternResult = patterns testTexture 3
+          grid = mkGrid 10 10 patternResult
+          initWaveState
+            = WaveState
+            { waveStateGrid = grid
+            , waveStateFrequencyHints =
+                frequencyHints (patternResult.patternResultPatterns)
+            , waveStateGen = mkStdGen 100
+            }
+      it "should collapse to a single pattern" $ do
+        let resultGrid = runWave initWaveState $ collapseAt (0, 0)
+        case cellAt (0, 0) resultGrid of
+          Nothing -> fail "Missing expected cell"
+          Just cell -> collapsed cell `shouldBe` True

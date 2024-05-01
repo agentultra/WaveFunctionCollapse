@@ -38,7 +38,9 @@ library:
   dependencies:
     - array
     - containers
+    - mtl
     - QuickCheck
+    - random
 
 executables:
   WaveFunctionCollapse-exe:
@@ -65,3 +67,4 @@ tests:
     - WaveFunctionCollapse
     - hspec
     - QuickCheck
+    - random
