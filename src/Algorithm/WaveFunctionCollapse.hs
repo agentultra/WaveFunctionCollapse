@@ -257,6 +257,27 @@ collapsed cell
   | isJust cell.cellCollapsed = True
   | otherwise                 = False
 
+removePossibility :: FrequencyHints -> PatternIndex -> Cell -> Either String Cell
+removePossibility hints patternIx cell = do
+  -- Remove PatternIndex from cell possibilities
+  -- Recalculate totalWeight and sumOfWeightLogWeight
+  let remaining = cell.cellPossibilities Array.// [(patternIx, False)]
+  maybeCollapsed <- checkCollapsed remaining
+  pure
+    $ Cell
+    { cellPossibilities = remaining
+    , cellCollapsed = maybeCollapsed
+    , cellTotalWeight = totalWeight remaining hints
+    , cellSumOfWeightLogWeight = sumOfWeightLogWeight remaining hints
+    }
+
+checkCollapsed :: Array PatternIndex Bool -> Either String (Maybe PatternIndex)
+checkCollapsed arr =
+  case exactlyOne id arr of
+    ExactlyNone -> Left "No remaining patterns"
+    ExactlyOne ix -> Right (Just ix)
+    ExactlyMore -> Right Nothing
+
 totalPossibleTileFrequency :: Array PatternIndex Bool -> FrequencyHints -> Int
 totalPossibleTileFrequency possibilities hints =
   foldl' sumPossibleCell 0 $ Array.assocs possibilities
@@ -372,3 +393,18 @@ randBetween lo hi = do
   let (x, gen') = uniformR (lo :: Int, hi :: Int) gen
   modify $ \s -> s { waveStateGen = gen' }
   pure x
+
+data ExactlyOneResult a
+  = ExactlyNone
+  | ExactlyOne a
+  | ExactlyMore
+  deriving (Eq, Show)
+
+exactlyOne :: Array.Ix ix => (a -> Bool) -> Array ix a -> ExactlyOneResult ix
+exactlyOne f = List.foldl' exactly ExactlyNone . Array.assocs
+  where
+    exactly ExactlyNone (i, v) | f v = ExactlyOne i
+    exactly e@ExactlyNone _ = e
+    exactly (ExactlyOne _) (_, v) | f v = ExactlyMore
+    exactly e@(ExactlyOne _) _ = e
+    exactly ExactlyMore _ = ExactlyMore
