@@ -38,6 +38,7 @@ library:
   dependencies:
     - array
     - containers
+    - heap
     - mtl
     - QuickCheck
     - random

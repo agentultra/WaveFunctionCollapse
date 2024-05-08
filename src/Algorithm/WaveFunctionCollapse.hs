@@ -8,6 +8,8 @@ module Algorithm.WaveFunctionCollapse where
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
 import qualified Data.Array as Array
+import Data.Heap (MinHeap)
+import qualified Data.Heap as Heap
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -316,11 +318,18 @@ mkGrid w h patternResult =
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
 cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
 
+newtype EntropyCell = EntropyCell (Float, Cell)
+  deriving (Eq, Show)
+
+instance Ord EntropyCell where
+  EntropyCell (x, _) `compare` EntropyCell (y, _) = x `compare` y
+
 data WaveState
   = WaveState
-  { waveStateGrid           :: Grid
-  , waveStateFrequencyHints :: FrequencyHints
-  , waveStateGen            :: StdGen
+  { waveStateGrid            :: Grid
+  , waveStateFrequencyHints  :: FrequencyHints
+  , waveStateGen             :: StdGen
+  , waveStateCellEntropyList :: MinHeap EntropyCell
   }
 
 runWave :: WaveState -> State WaveState a -> Grid
@@ -382,6 +391,25 @@ collapseAt cellIx = do
       | pIx == pIx' = (pIx', True)
       | otherwise   = (pIx', False)
 
+chooseCell :: State WaveState Cell
+chooseCell = do
+  entropyCells <- gets waveStateCellEntropyList
+  case Heap.view entropyCells of
+    Nothing -> error "Shouldn't be able to get here!" -- TODO (james): error handling over StateT?
+    Just (EntropyCell (_, cell), remainingEntropyCells) -> do
+      modify' $ \s -> s { waveStateCellEntropyList = remainingEntropyCells }
+      if collapsed cell
+      then chooseCell
+      else pure cell
+
+addEntropyCell :: Cell -> State WaveState ()
+addEntropyCell cell = do
+  entropyCells <- gets waveStateCellEntropyList
+  noise <- randNoise
+  let entropyCells'
+        = EntropyCell (noise + entropy cell, cell) `Heap.insert` entropyCells
+  modify' $ \s -> s { waveStateCellEntropyList = entropyCells' }
+
 maybeAt :: Array.Ix i => Array i e -> i -> Maybe e
 maybeAt arr ix
   | Array.inRange (Array.bounds arr) ix = Just $ arr Array.! ix
@@ -391,6 +419,13 @@ randBetween :: Int -> Int -> State WaveState Int
 randBetween lo hi = do
   gen <- gets waveStateGen
   let (x, gen') = uniformR (lo :: Int, hi :: Int) gen
+  modify $ \s -> s { waveStateGen = gen' }
+  pure x
+
+randNoise :: State WaveState Float
+randNoise = do
+  gen <- gets waveStateGen
+  let (x, gen') = uniformR (0 :: Float, 1) gen
   modify $ \s -> s { waveStateGen = gen' }
   pure x
 
