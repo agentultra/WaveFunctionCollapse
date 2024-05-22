@@ -5,6 +5,7 @@
 
 module Algorithm.WaveFunctionCollapse where
 
+import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
 import qualified Data.Array as Array
@@ -218,15 +219,6 @@ generateColorMap = List.foldl' addPatternElement emptyColorMap . zip [0..]
     topLeftOf :: Pattern a -> a
     topLeftOf Pattern {..} = getPattern Array.! (0, 0)
 
--- For some initialized output grid of cells:
---   while there are uncollapsed cells:
---     choose a cell with the lowest entropy:
---        collapse it (picking a pattern from the possible patterns)
---        propagate the choice of that cell out to neighbours (across the wave)
---
--- Contradiction: when you pick a cell that has no possible patterns to collapse to.
---   Solutions: give up and start again or backtracking? maybe others?
-
 data Cell
   = Cell
   { cellPossibilities        :: Array PatternIndex Bool
@@ -317,7 +309,7 @@ mkGrid w h patternResult freqHints
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
 cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
 
-newtype EntropyCell = EntropyCell (Float, Cell)
+newtype EntropyCell = EntropyCell (Float, (Int, Int))
   deriving (Eq, Show)
 
 instance Ord EntropyCell where
@@ -326,6 +318,7 @@ instance Ord EntropyCell where
 data WaveState
   = WaveState
   { waveStateGrid            :: Grid
+  , waveStateRemainingCells  :: Word
   , waveStateFrequencyHints  :: FrequencyHints
   , waveStateGen             :: StdGen
   , waveStateCellEntropyList :: MinHeap EntropyCell
@@ -337,9 +330,10 @@ mkWaveState (gridW, gridH) seed patternResult =
       grid = mkGrid gridW gridH patternResult freqHints
       gen = mkStdGen seed
       (entropyList, gen')
-        = buildEntropyList gen (Array.elems . getCells $ grid) Heap.empty
+        = buildEntropyList gen (Array.assocs . getCells $ grid) Heap.empty
   in WaveState
      { waveStateGrid = grid
+     , waveStateRemainingCells = gridW * gridH
      , waveStateFrequencyHints = freqHints
      , waveStateGen = gen'
      , waveStateCellEntropyList = entropyList
@@ -347,20 +341,46 @@ mkWaveState (gridW, gridH) seed patternResult =
   where
     buildEntropyList
       :: StdGen
-      -> [Cell]
+      -> [((Int, Int), Cell)]
       -> MinHeap EntropyCell
       -> (MinHeap EntropyCell, StdGen)
     buildEntropyList gen [] accHeap = (accHeap, gen)
-    buildEntropyList gen (cell:cells) accHeap =
+    buildEntropyList gen ((cellIx, cell):cells) accHeap =
       let (noise, gen') = uniformR (0, 1 :: Float) gen
           accHeap'
-            = Heap.insert (EntropyCell (entropy cell + noise, cell)) accHeap
+            = Heap.insert (EntropyCell (entropy cell + noise, cellIx)) accHeap
       in buildEntropyList gen' cells accHeap'
 
 runWave :: WaveState -> State WaveState a -> Grid
 runWave initState wave =
   let finalState = execState wave initState
   in finalState.waveStateGrid
+
+-- For some initialized output grid of cells:
+--   while there are uncollapsed cells:
+--     choose a cell with the lowest entropy:
+--        collapse it (picking a pattern from the possible patterns)
+--        propagate the choice of that cell out to neighbours (across the wave)
+--
+-- Contradiction: when you pick a cell that has no possible patterns to collapse to.
+--   Solutions: give up and start again or backtracking? maybe others?
+
+collapseWave :: State WaveState ()
+collapseWave = do
+  remainingCells <- gets waveStateRemainingCells
+  when (remainingCells > 0) propagateCollapse
+
+propagateCollapse :: State WaveState ()
+propagateCollapse = do
+  cellIx <- chooseCell
+  collapseAt cellIx
+  -- TODO (implement propagation)
+  pure ()
+
+isCollapsedAt :: (Int, Int) -> State WaveState Bool
+isCollapsedAt cellIx = do
+  cell <- getCellAt cellIx
+  pure $ collapsed cell
 
 collapseAt :: (Int, Int) -> State WaveState ()
 collapseAt cellIx = do
@@ -373,7 +393,9 @@ collapseAt cellIx = do
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
-      modify $ \s -> s { waveStateGrid = newGrid }
+      modify $ \s -> s { waveStateGrid = newGrid
+                       , waveStateRemainingCells = s.waveStateRemainingCells - 1
+                       }
   where
     collapseCell :: Cell -> State WaveState Cell
     collapseCell c = do
@@ -416,23 +438,32 @@ collapseAt cellIx = do
       | pIx == pIx' = (pIx', True)
       | otherwise   = (pIx', False)
 
-chooseCell :: State WaveState Cell
+chooseCell :: State WaveState (Int, Int)
 chooseCell = do
   entropyCells <- gets waveStateCellEntropyList
   case Heap.view entropyCells of
     Nothing -> error "Shouldn't be able to get here!" -- TODO (james): error handling over StateT?
-    Just (EntropyCell (_, cell), remainingEntropyCells) -> do
+    Just (EntropyCell (_, cellIx), remainingEntropyCells) -> do
       modify' $ \s -> s { waveStateCellEntropyList = remainingEntropyCells }
-      if collapsed cell
+      cellCollapsed <- isCollapsedAt cellIx
+      if cellCollapsed
       then chooseCell
-      else pure cell
+      else pure cellIx
 
-addEntropyCell :: Cell -> State WaveState ()
-addEntropyCell cell = do
+getCellAt :: (Int, Int) -> State WaveState Cell
+getCellAt cellIx = do
+  grid <- gets waveStateGrid
+  case cellAt cellIx grid of
+    Nothing -> error "Fix me: getCellAt"
+    Just cell -> pure cell
+
+addEntropyCell :: (Int, Int) -> State WaveState ()
+addEntropyCell cellIx = do
+  cell <- getCellAt cellIx
   entropyCells <- gets waveStateCellEntropyList
   noise <- randNoise
   let entropyCells'
-        = EntropyCell (noise + entropy cell, cell) `Heap.insert` entropyCells
+        = EntropyCell (noise + entropy cell, cellIx) `Heap.insert` entropyCells
   modify' $ \s -> s { waveStateCellEntropyList = entropyCells' }
 
 maybeAt :: Array.Ix i => Array i e -> i -> Maybe e
