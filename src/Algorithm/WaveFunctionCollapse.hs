@@ -308,12 +308,11 @@ entropy Cell {..} =
 newtype Grid = Grid { getCells :: Array (Int, Int) Cell }
   deriving (Eq, Show)
 
-mkGrid :: Ord a => Word -> Word -> PatternResult a -> Grid
-mkGrid w h patternResult =
-  let freqHints = frequencyHints patternResult.patternResultPatterns
-  in Grid
-     . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
-     $ repeat (mkCell patternResult freqHints)
+mkGrid :: Ord a => Word -> Word -> PatternResult a -> FrequencyHints -> Grid
+mkGrid w h patternResult freqHints
+  = Grid
+  . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
+  $ repeat (mkCell patternResult freqHints)
 
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
 cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
@@ -331,6 +330,32 @@ data WaveState
   , waveStateGen             :: StdGen
   , waveStateCellEntropyList :: MinHeap EntropyCell
   }
+
+mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
+mkWaveState (gridW, gridH) seed patternResult =
+  let freqHints = frequencyHints patternResult.patternResultPatterns
+      grid = mkGrid gridW gridH patternResult freqHints
+      gen = mkStdGen seed
+      (entropyList, gen')
+        = buildEntropyList gen (Array.elems . getCells $ grid) Heap.empty
+  in WaveState
+     { waveStateGrid = grid
+     , waveStateFrequencyHints = freqHints
+     , waveStateGen = gen'
+     , waveStateCellEntropyList = entropyList
+     }
+  where
+    buildEntropyList
+      :: StdGen
+      -> [Cell]
+      -> MinHeap EntropyCell
+      -> (MinHeap EntropyCell, StdGen)
+    buildEntropyList gen [] accHeap = (accHeap, gen)
+    buildEntropyList gen (cell:cells) accHeap =
+      let (noise, gen') = uniformR (0, 1 :: Float) gen
+          accHeap'
+            = Heap.insert (EntropyCell (entropy cell + noise, cell)) accHeap
+      in buildEntropyList gen' cells accHeap'
 
 runWave :: WaveState -> State WaveState a -> Grid
 runWave initState wave =

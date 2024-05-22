@@ -74,6 +74,7 @@ test-suite WaveFunctionCollapse-test
     , array
     , base >=4.7 && <5
     , containers
+    , heap
     , hspec
     , random
   default-language: Haskell2010

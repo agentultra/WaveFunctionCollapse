@@ -66,6 +66,7 @@ tests:
     - array
     - containers
     - WaveFunctionCollapse
+    - heap
     - hspec
     - QuickCheck
     - random
