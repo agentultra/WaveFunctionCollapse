@@ -322,6 +322,7 @@ data WaveState
   , waveStateFrequencyHints  :: FrequencyHints
   , waveStateGen             :: StdGen
   , waveStateCellEntropyList :: MinHeap EntropyCell
+  , waveStatePropagateStack  :: [(Int, Int)]
   }
 
 mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
@@ -337,6 +338,7 @@ mkWaveState (gridW, gridH) seed patternResult =
      , waveStateFrequencyHints = freqHints
      , waveStateGen = gen'
      , waveStateCellEntropyList = entropyList
+     , waveStatePropagateStack = []
      }
   where
     buildEntropyList
@@ -350,6 +352,20 @@ mkWaveState (gridW, gridH) seed patternResult =
           accHeap'
             = Heap.insert (EntropyCell (entropy cell + noise, cellIx)) accHeap
       in buildEntropyList gen' cells accHeap'
+
+pushPropStack :: (Int, Int) -> State WaveState ()
+pushPropStack v
+  = modify'
+  $ \s -> s { waveStatePropagateStack = v : s.waveStatePropagateStack }
+
+popPropStack :: State WaveState (Maybe (Int, Int))
+popPropStack = do
+  stack <- gets waveStatePropagateStack
+  case stack of
+    [] -> pure Nothing
+    (x:xs) -> do
+      modify' $ \s -> s { waveStatePropagateStack = xs }
+      pure $ Just x
 
 runWave :: WaveState -> State WaveState a -> Grid
 runWave initState wave =
