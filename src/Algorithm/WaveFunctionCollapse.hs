@@ -9,6 +9,7 @@ import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
 import qualified Data.Array as Array
+import Data.Bifunctor
 import Data.Heap (MinHeap)
 import qualified Data.Heap as Heap
 import qualified Data.List as List
@@ -96,10 +97,23 @@ data Direction
   | Right'
   | Down
   | Left'
-  deriving (Eq, Ord, Show)
+  deriving (Bounded, Enum, Eq, Ord, Show)
 
 instance Arbitrary Direction where
   arbitrary = oneof [pure Up, pure Right', pure Down, pure Left']
+
+directions :: [Direction]
+directions = [Up, Right', Down, Left']
+
+cellIxForDirection :: (Int, Int) -> (Int, Int) -> Direction -> (Int, Int)
+cellIxForDirection (_, maxY) (cellX, cellY) Up
+  = (cellX, cellY - 1 `mod` maxY)
+cellIxForDirection (maxX, _) (cellX, cellY) Right'
+  = (cellX + 1 `mod` maxX, cellY)
+cellIxForDirection (_, maxY) (cellX, cellY) Down
+  = (cellX, cellY + 1 `mod` maxY)
+cellIxForDirection (maxX, _) (cellX, cellY) Left'
+  = (cellX - 1 `mod` maxX, cellY)
 
 -- | Check if two patterns overlap, offset in a given Direction by 1.
 overlaps :: Eq a => Pattern a -> Pattern a -> Direction -> Bool
@@ -168,6 +182,7 @@ data AdjacencyKey
   deriving (Eq, Ord, Show)
 
 newtype AdjacencyRules = AdjacencyRules { getAdjacencyRules :: Map AdjacencyKey Bool }
+  deriving (Eq, Show)
 
 emptyAdjacencyRules :: AdjacencyRules
 emptyAdjacencyRules = AdjacencyRules Map.empty
@@ -317,8 +332,13 @@ instance Ord EntropyCell where
 
 data RemovePattern
   = RemovePattern
-  { propagateCellPatternIx :: Int
-  , propagateCellCellIx    :: (Int, Int)
+  { propagateCellPatternIx :: Int -- ^ The pattern we collpsed a cell
+                                  -- to that we want to propagate out
+                                  -- to neighbours
+  , propagateCellIx :: (Int, Int) -- ^ The index of the cell that
+                                  -- issued this command
+  , propagateCellDirection :: Direction -- ^ The direction from the
+                                        -- propagateCellPatternIx
   }
   deriving (Eq, Show)
 
@@ -327,12 +347,13 @@ data WaveState
   { waveStateGrid               :: Grid
   , waveStateRemainingCells     :: Word
   , waveStateFrequencyHints     :: FrequencyHints
+  , waveStateAdjacencyRules     :: AdjacencyRules
   , waveStateGen                :: StdGen
   , waveStateCellEntropyList    :: MinHeap EntropyCell
   , waveStateRemovePatternStack :: [RemovePattern]
   }
 
-mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
+mkWaveState :: (Eq a, Ord a) => (Word, Word) -> Int -> PatternResult a -> WaveState
 mkWaveState (gridW, gridH) seed patternResult =
   let freqHints = frequencyHints patternResult.patternResultPatterns
       grid = mkGrid gridW gridH patternResult freqHints
@@ -343,6 +364,7 @@ mkWaveState (gridW, gridH) seed patternResult =
      { waveStateGrid = grid
      , waveStateRemainingCells = gridW * gridH
      , waveStateFrequencyHints = freqHints
+     , waveStateAdjacencyRules = generateAdjacencyRules patternResult.patternResultPatterns
      , waveStateGen = gen'
      , waveStateCellEntropyList = entropyList
      , waveStateRemovePatternStack = []
@@ -360,7 +382,7 @@ mkWaveState (gridW, gridH) seed patternResult =
             = Heap.insert (EntropyCell (entropy cell + noise, cellIx)) accHeap
       in buildEntropyList gen' cells accHeap'
 
-pushRemoveStack :: (Int, Int) -> State WaveState ()
+pushRemoveStack :: RemovePattern -> State WaveState ()
 pushRemoveStack v
   = modify'
   $ \s -> s { waveStateRemovePatternStack = v : s.waveStateRemovePatternStack }
@@ -397,7 +419,7 @@ propagateCollapse :: State WaveState ()
 propagateCollapse = do
   cellIx <- chooseCell
   collapseAt cellIx
-  -- TODO (implement propagation)
+  propagate
   pure ()
 
 isCollapsedAt :: (Int, Int) -> State WaveState Bool
@@ -416,8 +438,13 @@ collapseAt cellIx = do
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
+          (Just collapsedPattern) = collapsedCell.cellCollapsed
+          patternStack' = [ RemovePattern collapsedPattern cellIx d
+                          | d <- directions
+                          ]
       modify $ \s -> s { waveStateGrid = newGrid
                        , waveStateRemainingCells = s.waveStateRemainingCells - 1
+                       , waveStateRemovePatternStack = patternStack'
                        }
   where
     collapseCell :: Cell -> State WaveState Cell
@@ -460,6 +487,42 @@ collapseAt cellIx = do
     keepIfMatches pIx (pIx', _)
       | pIx == pIx' = (pIx', True)
       | otherwise   = (pIx', False)
+
+-- while the patternRemovalStack is not empty:
+--   (pattern to remove, cellIx) <- pop the top
+--   for each direction:
+--     modify the cell at cellIx + direction: eliminate the pattern from the set of possible patterns based on the adjacency rules
+--     for each direction:
+--       get set of enabled cells to the one we're looking at (based on the adjacency rules)
+--       push those as removals to the pattern removal stack
+--     update the cell's entropy + entropy cache
+--     insert the cell into the heap list
+--
+-- Note: we can detect contradiction when the set of enabled cells is empty due to a prior removal.
+
+propagate :: State WaveState ()
+propagate = do
+  removal <- popRemoveStack
+  case removal of
+    Nothing -> pure ()
+    Just removePattern -> do
+      eliminate removePattern
+
+-- Remove patterns from the set of possible patterns for this PatternIndex
+-- based on the AdjacencyRules
+--
+-- Get set of not-enabled Patterns for the cells in each direction:
+--   add those patterns to the pattern removal stack
+eliminate :: RemovePattern -> State WaveState ()
+eliminate RemovePattern {..} = do
+  adjacencyRules <- gets waveStateAdjacencyRules
+  grid <- gets waveStateGrid
+  let gridSize = bimap (+ 1) (+ 1) . snd . Array.bounds . getCells $ grid
+  modifyCellAt (cellIxForDirection gridSize propagateCellIx propagateCellDirection) $ \cell ->
+    cell { cellPossibilities = cell.cellPossibilities Array.// [] }
+
+modifyCellAt :: (Int, Int) -> (Cell -> Cell) -> State WaveState ()
+modifyCellAt = undefined
 
 chooseCell :: State WaveState (Int, Int)
 chooseCell = do
