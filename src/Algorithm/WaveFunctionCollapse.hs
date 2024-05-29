@@ -315,14 +315,21 @@ newtype EntropyCell = EntropyCell (Float, (Int, Int))
 instance Ord EntropyCell where
   EntropyCell (x, _) `compare` EntropyCell (y, _) = x `compare` y
 
+data RemovePattern
+  = RemovePattern
+  { propagateCellPatternIx :: Int
+  , propagateCellCellIx    :: (Int, Int)
+  }
+  deriving (Eq, Show)
+
 data WaveState
   = WaveState
-  { waveStateGrid            :: Grid
-  , waveStateRemainingCells  :: Word
-  , waveStateFrequencyHints  :: FrequencyHints
-  , waveStateGen             :: StdGen
-  , waveStateCellEntropyList :: MinHeap EntropyCell
-  , waveStatePropagateStack  :: [(Int, Int)]
+  { waveStateGrid               :: Grid
+  , waveStateRemainingCells     :: Word
+  , waveStateFrequencyHints     :: FrequencyHints
+  , waveStateGen                :: StdGen
+  , waveStateCellEntropyList    :: MinHeap EntropyCell
+  , waveStateRemovePatternStack :: [RemovePattern]
   }
 
 mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
@@ -338,7 +345,7 @@ mkWaveState (gridW, gridH) seed patternResult =
      , waveStateFrequencyHints = freqHints
      , waveStateGen = gen'
      , waveStateCellEntropyList = entropyList
-     , waveStatePropagateStack = []
+     , waveStateRemovePatternStack = []
      }
   where
     buildEntropyList
@@ -353,18 +360,18 @@ mkWaveState (gridW, gridH) seed patternResult =
             = Heap.insert (EntropyCell (entropy cell + noise, cellIx)) accHeap
       in buildEntropyList gen' cells accHeap'
 
-pushPropStack :: (Int, Int) -> State WaveState ()
-pushPropStack v
+pushRemoveStack :: (Int, Int) -> State WaveState ()
+pushRemoveStack v
   = modify'
-  $ \s -> s { waveStatePropagateStack = v : s.waveStatePropagateStack }
+  $ \s -> s { waveStateRemovePatternStack = v : s.waveStateRemovePatternStack }
 
-popPropStack :: State WaveState (Maybe (Int, Int))
-popPropStack = do
-  stack <- gets waveStatePropagateStack
+popRemoveStack :: State WaveState (Maybe RemovePattern)
+popRemoveStack = do
+  stack <- gets waveStateRemovePatternStack
   case stack of
     [] -> pure Nothing
     (x:xs) -> do
-      modify' $ \s -> s { waveStatePropagateStack = xs }
+      modify' $ \s -> s { waveStateRemovePatternStack = xs }
       pure $ Just x
 
 runWave :: WaveState -> State WaveState a -> Grid
