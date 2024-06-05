@@ -4,6 +4,7 @@
 
 import Control.Monad
 import qualified Data.Array as Array
+import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Heap as Heap
 import qualified Data.Map.Strict as Map
 import Test.Hspec
@@ -77,3 +78,55 @@ main = hspec $ do
         case cellAt (0, 0) resultGrid of
           Nothing -> fail "Missing expected cell"
           Just cell -> collapsed cell `shouldBe` True
+
+  describe "notEnabled" $ do
+    let rules = AdjacencyRules
+                $ Map.fromList
+                [ ((AdjacencyKey 0 1 Up), True)
+                , ((AdjacencyKey 0 1 Down), False)
+                , ((AdjacencyKey 0 1 Left'), False)
+                , ((AdjacencyKey 0 1 Right'), False)
+                , ((AdjacencyKey 0 2 Up), True)
+                , ((AdjacencyKey 0 2 Down), False)
+                , ((AdjacencyKey 0 2 Left'), False)
+                , ((AdjacencyKey 0 2 Right'), False)
+                , ((AdjacencyKey 1 1 Up), False)
+                , ((AdjacencyKey 1 1 Down), False)
+                , ((AdjacencyKey 1 1 Left'), False)
+                , ((AdjacencyKey 1 1 Right'), False)
+                , ((AdjacencyKey 1 2 Up), False)
+                , ((AdjacencyKey 1 2 Down), False)
+                , ((AdjacencyKey 1 2 Left'), False)
+                , ((AdjacencyKey 1 2 Right'), False)
+                ]
+    context "Given Cell with two possibilities, one possible" $ do
+      let cell
+            = Cell
+            { cellPossibilities = Array.listArray (0, 1) [True, False]
+            , cellCollapsed = Nothing
+            , cellTotalWeight = 0.0
+            , cellSumOfWeightLogWeight = 0.0
+            }
+      it "should return possibilies that are not enabled" $ do
+        let toRemove = notEnabled (1 :| [2]) Down rules cell
+        toRemove `shouldBe` [0]
+
+      it "should keep enabled possibilities" $ do
+        let toRemove = notEnabled (1 :| [2]) Up rules cell
+        toRemove `shouldBe` []
+
+    context "Given Cell with two possibilies, all possible" $ do
+      let cell
+            = Cell
+            { cellPossibilities = Array.listArray (0, 1) [True, True]
+            , cellCollapsed = Nothing
+            , cellTotalWeight = 0.0
+            , cellSumOfWeightLogWeight = 0.0
+            }
+      it "should return possibilies that are not enabled" $ do
+        let toRemove = notEnabled (1 :| [2]) Down rules cell
+        toRemove `shouldBe` [0, 1]
+
+      it "should keep enabled possibilities" $ do
+        let toRemove = notEnabled (1 :| [2]) Up rules cell
+        toRemove `shouldBe` [1]
