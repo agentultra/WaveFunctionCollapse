@@ -283,28 +283,22 @@ removePossibility hints patternIx cell = do
     , cellSumOfWeightLogWeight = sumOfWeightLogWeight remaining hints
     }
 
--- | Get the list of pattern indices that are /not enabled/ for the input set of pattern indices given the AdjacencyRules
---
--- /Enabled/ means that the possible value in the input cell doesn't
--- match any rule involving the input pattern for the given direction,
--- where the input pattern is the target and possible value is the
--- source.
-notEnabled :: NonEmpty PatternIndex -> Direction -> AdjacencyRules -> Cell -> [PatternIndex]
-notEnabled patternIxBs dir rules cell =
+notEnabled :: PatternIndex -> Direction -> AdjacencyRules -> Cell -> [PatternIndex]
+notEnabled patternCheck dir rules cell =
   let possibilities = filter snd $ Array.assocs cell.cellPossibilities
-  in List.nub [ fst p | patternCheck <- NE.toList patternIxBs, p <- possibilities, isNotEnabled patternCheck dir rules p ]
+  in List.nub [ fst p | p <- possibilities, isEnabled patternCheck dir rules p ]
   where
-    isNotEnabled
+    isEnabled
       :: PatternIndex
       -> Direction
       -> AdjacencyRules
       -> (PatternIndex, Bool)
       -> Bool
-    isNotEnabled _ _ _ (_, False) = error "NEVER HIT ME!"
-    isNotEnabled patB d r (patA, _) =
+    isEnabled _ _ _ (_, False) = False
+    isEnabled patB d r (patA, _) =
       case (getAdjacencyRules r) Map.!? (AdjacencyKey patA patB d) of
         Nothing -> error "TODO (fixme): filterPossibility, invalid adjacency rules"
-        Just v  -> not v
+        Just v  -> v
 
 checkCollapsed :: Array PatternIndex Bool -> Either String (Maybe PatternIndex)
 checkCollapsed arr =
@@ -541,7 +535,32 @@ propagate = do
 -- Get set of not-enabled Patterns for the cells in each direction:
 --   add those patterns to the pattern removal stack
 eliminate :: RemovePattern -> State WaveState ()
-eliminate RemovePattern {..} = undefined
+eliminate RemovePattern {..} = do
+  modifyCellAt propagateCellIx (removeCellIx propagateCellPatternIx)
+  neighborRemovals <- forM directions $
+    getNeighborRemovals propagateCellIx propagateCellPatternIx
+  pushRemovals $ join neighborRemovals
+  where
+    removeCellIx :: PatternIndex -> Cell -> Cell
+    removeCellIx patternIx cell =
+      cell { cellPossibilities =
+               cell.cellPossibilities Array.// [(patternIx, False)]
+           }
+
+getNeighborRemovals
+  :: (Int, Int)
+  -> PatternIndex
+  -> Direction
+  -> State WaveState [RemovePattern]
+getNeighborRemovals baseCellIx patternIx dir = do
+  grid <- gets waveStateGrid
+  let removeCellIx = fromDirection grid baseCellIx dir
+  cell <- getCellAt removeCellIx
+  adjacencyRules <- gets waveStateAdjacencyRules
+  pure . map (flip RemovePattern removeCellIx) $ notEnabled patternIx dir adjacencyRules cell
+
+pushRemovals :: [RemovePattern] -> State WaveState ()
+pushRemovals = undefined
 
 modifyCellAt :: (Int, Int) -> (Cell -> Cell) -> State WaveState ()
 modifyCellAt = undefined
@@ -607,3 +626,20 @@ exactlyOne f = List.foldl' exactly ExactlyNone . Array.assocs
     exactly (ExactlyOne _) (_, v) | f v = ExactlyMore
     exactly e@(ExactlyOne _) _ = e
     exactly ExactlyMore _ = ExactlyMore
+
+fromDirection :: Grid -> (Int, Int) -> Direction -> (Int, Int)
+fromDirection grid (x, y) dir =
+  let (gridW, gridH) = bimap snd snd . Array.bounds $ getCells grid
+  in case dir of
+    Up ->
+      let y' = y - 1
+      in (x, if y' < 0 then gridH - 1 else y')
+    Right' ->
+      let x' = x + 1
+      in (if x' >= gridW then 0 else x', y)
+    Down ->
+      let y' = y + 1
+      in (x, if y' >= gridH then 0 else y')
+    Left' ->
+      let x' = x - 1
+      in (if x' < 0 then gridW - 1 else x', y)

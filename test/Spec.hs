@@ -108,11 +108,11 @@ main = hspec $ do
             , cellSumOfWeightLogWeight = 0.0
             }
       it "should return possibilies that are not enabled" $ do
-        let toRemove = notEnabled (1 :| [2]) Down rules cell
+        let toRemove = notEnabled 1 Up rules cell
         toRemove `shouldBe` [0]
 
       it "should keep enabled possibilities" $ do
-        let toRemove = notEnabled (1 :| [2]) Up rules cell
+        let toRemove = notEnabled 1 Down rules cell
         toRemove `shouldBe` []
 
     context "Given Cell with two possibilies, all possible" $ do
@@ -123,10 +123,10 @@ main = hspec $ do
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = 0.0
             }
-      it "should return possibilies that are not enabled" $ do
-        let toRemove = notEnabled (1 :| [2]) Down rules cell
-        toRemove `shouldBe` [0, 1]
+      it "should not consider rules that aren't allowed" $ do
+        let toRemove = notEnabled 1 Down rules cell
+        toRemove `shouldBe` []
 
-      it "should keep enabled possibilities" $ do
-        let toRemove = notEnabled (1 :| [2]) Up rules cell
-        toRemove `shouldBe` [1]
+      it "should return pattern indices that are no longer enabled" $ do
+        let toRemove = notEnabled 1 Up rules cell
+        toRemove `shouldBe` [0]
