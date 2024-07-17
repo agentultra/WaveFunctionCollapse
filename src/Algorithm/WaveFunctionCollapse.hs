@@ -12,8 +12,6 @@ import qualified Data.Array as Array
 import Data.Bifunctor
 import Data.Heap (MinHeap)
 import qualified Data.Heap as Heap
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -335,7 +333,7 @@ entropy Cell {..} =
 newtype Grid = Grid { getCells :: Array (Int, Int) Cell }
   deriving (Eq, Show)
 
-mkGrid :: Ord a => Word -> Word -> PatternResult a -> FrequencyHints -> Grid
+mkGrid :: Word -> Word -> PatternResult a -> FrequencyHints -> Grid
 mkGrid w h patternResult freqHints
   = Grid
   . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
@@ -373,7 +371,7 @@ data WaveState
   , waveStateRemovePatternStack :: [RemovePattern]
   }
 
-mkWaveState :: (Eq a, Ord a) => (Word, Word) -> Int -> PatternResult a -> WaveState
+mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
 mkWaveState (gridW, gridH) seed patternResult =
   let freqHints = frequencyHints patternResult.patternResultPatterns
       grid = mkGrid gridW gridH patternResult freqHints
@@ -433,14 +431,15 @@ runWave initState wave =
 collapseWave :: State WaveState ()
 collapseWave = do
   remainingCells <- gets waveStateRemainingCells
-  when (remainingCells > 0) propagateCollapse
+  when (remainingCells > 0) $ do
+    propagateCollapse
+    collapseWave
 
 propagateCollapse :: State WaveState ()
 propagateCollapse = do
   cellIx <- chooseCell
   collapseAt cellIx
   propagate
-  pure ()
 
 isCollapsedAt :: (Int, Int) -> State WaveState Bool
 isCollapsedAt cellIx = do
@@ -454,30 +453,31 @@ collapseAt cellIx = do
   case cells `maybeAt` cellIx of
     Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
     Just cell -> do
-      collapsedCell <- collapseCell cell
+      (collapsedCell, removalPattern) <- collapseCell cell
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
-          (Just collapsedPattern) = collapsedCell.cellCollapsed
           -- TODO: initialize the patternStack with the pattern
           -- indices to remove at each neighbour based on the
           -- adjacency rules
-          patternStack' = [ RemovePattern collapsedPattern cellIx ]
+          patternStack' = [ removalPattern ]
       modify $ \s -> s { waveStateGrid = newGrid
                        , waveStateRemainingCells = s.waveStateRemainingCells - 1
                        , waveStateRemovePatternStack = patternStack'
                        }
   where
-    collapseCell :: Cell -> State WaveState Cell
+    collapseCell :: Cell -> State WaveState (Cell, RemovePattern)
     collapseCell c = do
       patternIx <- pickPatternIx c
       pure
-        $ Cell
-        { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
-        , cellCollapsed = Just patternIx
-        , cellTotalWeight = 0.0
-        , cellSumOfWeightLogWeight = 0.0
-        }
+        $ ( Cell
+            { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
+            , cellCollapsed = Just patternIx
+            , cellTotalWeight = 0.0
+            , cellSumOfWeightLogWeight = 0.0
+            }
+          , RemovePattern patternIx cellIx
+          )
 
     pickPatternIx :: Cell -> State WaveState PatternIndex
     pickPatternIx Cell {..} = do
@@ -528,6 +528,7 @@ propagate = do
     Nothing -> pure ()
     Just removePattern -> do
       eliminate removePattern
+      propagate
 
 -- 1. The adjacency rules should always hold
 -- 2. The remaining possible cell values of my neighbours must always
@@ -540,19 +541,12 @@ propagate = do
 --   add those patterns to the pattern removal stack
 eliminate :: RemovePattern -> State WaveState ()
 eliminate RemovePattern {..} = do
-  cell <- getCellAt propagateCellIx
   freqHints <- gets waveStateFrequencyHints
   modifyCellAt propagateCellIx
     $ removePossibility freqHints propagateCellPatternIx
   neighborRemovals <- forM directions $
     getNeighborRemovals propagateCellIx propagateCellPatternIx
   pushRemovals $ join neighborRemovals
-  where
-    removeCellIx :: PatternIndex -> Cell -> Cell
-    removeCellIx patternIx cell =
-      cell { cellPossibilities =
-               cell.cellPossibilities Array.// [(patternIx, False)]
-           }
 
 getNeighborRemovals
   :: (Int, Int)
@@ -580,7 +574,15 @@ modifyCellAt cellIx f = do
   cell <- getCellAt cellIx
   case f cell of
     Left err -> error err
-    Right cell' -> putCellAt cellIx cell'
+    Right cell' -> do
+      when (cellEntropyChanged cell cell') $
+        addEntropyCell cellIx
+      putCellAt cellIx cell'
+  where
+    cellEntropyChanged :: Cell -> Cell -> Bool
+    cellEntropyChanged (Cell _ _ weightX logWeightX) (Cell _ _ weightY logWeightY)
+      | weightX == weightY && logWeightX == logWeightY = False
+      | otherwise                                      = True
 
 chooseCell :: State WaveState (Int, Int)
 chooseCell = do

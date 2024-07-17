@@ -4,7 +4,6 @@
 
 import Control.Monad
 import qualified Data.Array as Array
-import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Heap as Heap
 import qualified Data.Map.Strict as Map
 import Test.Hspec
@@ -72,6 +71,9 @@ main = hspec $ do
                 frequencyHints (patternResult.patternResultPatterns)
             , waveStateGen = mkStdGen 100
             , waveStateCellEntropyList = Heap.empty
+            , waveStateRemainingCells = 0
+            , waveStateAdjacencyRules = emptyAdjacencyRules
+            , waveStateRemovePatternStack = []
             }
       it "should collapse to a single pattern" $ do
         let resultGrid = runWave initWaveState $ collapseAt (0, 0)
