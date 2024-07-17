@@ -132,3 +132,17 @@ main = hspec $ do
       it "should return pattern indices that are no longer enabled" $ do
         let toRemove = notEnabled 1 Up rules cell
         toRemove `shouldBe` [0]
+
+  describe "runWave" $ do
+    it "returns a Grid changed from what we start with" $ do
+      let inputTexture
+            = textureFromList @Int 4
+            [ 0, 1, 0, 0
+            , 0, 1, 0, 0
+            , 1, 1, 1, 1
+            , 0, 1, 0, 0
+            ]
+          patternResult = patterns inputTexture 3
+          initWaveState = mkWaveState (10, 10) 100 patternResult
+          finalGrid = runWave initWaveState collapseWave
+      initWaveState.waveStateGrid /= finalGrid `shouldBe` True

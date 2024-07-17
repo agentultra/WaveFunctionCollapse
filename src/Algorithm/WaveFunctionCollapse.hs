@@ -5,6 +5,8 @@
 
 module Algorithm.WaveFunctionCollapse where
 
+import qualified Debug.Trace as Debug
+
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
@@ -61,6 +63,12 @@ mkTexture fillValue size
   = Texture
   . Array.listArray ((0,0), (size - 1, size - 1))
   $ repeat fillValue
+
+textureFromList :: Word -> [a] -> Texture a
+textureFromList size xs
+  = Texture
+  . Array.listArray ((0, 0), (size - 1, size - 1))
+  $ xs
 
 textureSize :: Texture a -> Word
 textureSize
@@ -266,12 +274,13 @@ collapsed cell
   | isJust cell.cellCollapsed = True
   | otherwise                 = False
 
--- NOTE: remember to call removePossibility when eliminating
+-- TODO: rename or fix me... seems we've already "picked" the
+-- remaining by collapsing before calling this.
 removePossibility :: FrequencyHints -> PatternIndex -> Cell -> Either String Cell
 removePossibility hints patternIx cell = do
-  -- Remove PatternIndex from cell possibilities
-  -- Recalculate totalWeight and sumOfWeightLogWeight
-  let remaining = cell.cellPossibilities Array.// [(patternIx, False)]
+  --Debug.traceM $ show cell.cellPossibilities
+  let remaining = cell.cellPossibilities -- Array.// [(patternIx, False)]
+  --Debug.traceM $ show remaining
   maybeCollapsed <- checkCollapsed remaining
   pure
     $ Cell
