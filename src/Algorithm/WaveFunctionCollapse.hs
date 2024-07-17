@@ -344,6 +344,10 @@ mkGrid w h patternResult freqHints
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
 cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
 
+setCell :: (Int, Int) -> Cell -> Grid -> Grid
+setCell cellIx cell grid =
+  Grid $ grid.getCells Array.// [(cellIx, cell)]
+
 newtype EntropyCell = EntropyCell (Float, (Int, Int))
   deriving (Eq, Show)
 
@@ -536,7 +540,10 @@ propagate = do
 --   add those patterns to the pattern removal stack
 eliminate :: RemovePattern -> State WaveState ()
 eliminate RemovePattern {..} = do
-  modifyCellAt propagateCellIx (removeCellIx propagateCellPatternIx)
+  cell <- getCellAt propagateCellIx
+  freqHints <- gets waveStateFrequencyHints
+  modifyCellAt propagateCellIx
+    $ removePossibility freqHints propagateCellPatternIx
   neighborRemovals <- forM directions $
     getNeighborRemovals propagateCellIx propagateCellPatternIx
   pushRemovals $ join neighborRemovals
@@ -557,13 +564,23 @@ getNeighborRemovals baseCellIx patternIx dir = do
   let removeCellIx = fromDirection grid baseCellIx dir
   cell <- getCellAt removeCellIx
   adjacencyRules <- gets waveStateAdjacencyRules
-  pure . map (flip RemovePattern removeCellIx) $ notEnabled patternIx dir adjacencyRules cell
+  pure
+    . map (flip RemovePattern removeCellIx)
+    $ notEnabled patternIx dir adjacencyRules cell
 
 pushRemovals :: [RemovePattern] -> State WaveState ()
-pushRemovals = undefined
+pushRemovals removals = do
+  modify'
+    $ \s -> s
+    { waveStateRemovePatternStack = s.waveStateRemovePatternStack ++ removals
+    }
 
-modifyCellAt :: (Int, Int) -> (Cell -> Cell) -> State WaveState ()
-modifyCellAt = undefined
+modifyCellAt :: (Int, Int) -> (Cell -> Either String Cell) -> State WaveState ()
+modifyCellAt cellIx f = do
+  cell <- getCellAt cellIx
+  case f cell of
+    Left err -> error err
+    Right cell' -> putCellAt cellIx cell'
 
 chooseCell :: State WaveState (Int, Int)
 chooseCell = do
@@ -583,6 +600,10 @@ getCellAt cellIx = do
   case cellAt cellIx grid of
     Nothing -> error "Fix me: getCellAt"
     Just cell -> pure cell
+
+putCellAt :: (Int, Int) -> Cell -> State WaveState ()
+putCellAt cellIx cell =
+  modify' $ \s -> s { waveStateGrid = setCell cellIx cell s.waveStateGrid }
 
 addEntropyCell :: (Int, Int) -> State WaveState ()
 addEntropyCell cellIx = do
