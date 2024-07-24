@@ -665,7 +665,7 @@ exactlyOne f = List.foldl' exactly ExactlyNone . Array.assocs
 
 fromDirection :: Grid -> (Int, Int) -> Direction -> (Int, Int)
 fromDirection grid (x, y) dir =
-  let (gridW, gridH) = bimap snd snd . Array.bounds $ getCells grid
+  let (gridW, gridH) = snd . Array.bounds $ getCells grid
   in case dir of
     Up ->
       let y' = y - 1
