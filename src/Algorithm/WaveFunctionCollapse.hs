@@ -17,6 +17,10 @@ import qualified Data.Heap as Heap
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+-- TODO: REMOVE ME
+import Data.Set (Set)
+import qualified Data.Set as Set
+-- TODO: /REMOVE ME
 import Data.Foldable
 import Data.Maybe
 import System.Random
@@ -207,8 +211,7 @@ allowed pA pB dir = Map.lookup (AdjacencyKey pA pB dir) . getAdjacencyRules
 generateAdjacencyRules :: Eq a => [Pattern a] -> AdjacencyRules
 generateAdjacencyRules patterns' =
   let patternIndices = [ (x, y) | x <- [0..length patterns' - 1], y <- [0..length patterns' - 1]]
-      foo = List.foldl' addRule emptyAdjacencyRules patternIndices
-  in Debug.trace (show foo) $ foo
+  in List.foldl' addRule emptyAdjacencyRules patternIndices
   where
     addRule :: AdjacencyRules -> (PatternIndex, PatternIndex) -> AdjacencyRules
     addRule rs (aIx, bIx) =
@@ -282,9 +285,7 @@ collapsed cell
 -- remaining by collapsing before calling this.
 removePossibility :: FrequencyHints -> PatternIndex -> Cell -> Either String Cell
 removePossibility hints patternIx cell = do
-  --Debug.traceM $ show cell.cellPossibilities
   let remaining = cell.cellPossibilities -- Array.// [(patternIx, False)]
-  --Debug.traceM $ show remaining
   maybeCollapsed <- checkCollapsed remaining
   pure
     $ Cell
@@ -294,19 +295,24 @@ removePossibility hints patternIx cell = do
     , cellSumOfWeightLogWeight = sumOfWeightLogWeight remaining hints
     }
 
+-- | Return the list of 'PatternIndex' that overlap with @patternCheck@.
+--
+-- This list of 'PatternIndex' is used to remove those patterns from
+-- the input cell later on because the @patternCheck@ pattern has been
+-- removed from a neighbouring cell.
 notEnabled :: PatternIndex -> Direction -> AdjacencyRules -> Cell -> [PatternIndex]
 notEnabled patternCheck dir rules cell =
   let possibilities = filter snd $ Array.assocs cell.cellPossibilities
-  in List.nub [ fst p | p <- possibilities, isEnabled patternCheck dir rules p ]
+  in List.nub [ fst p | p <- possibilities, isEnabledFor patternCheck dir rules p ]
   where
-    isEnabled
+    isEnabledFor
       :: PatternIndex
       -> Direction
       -> AdjacencyRules
       -> (PatternIndex, Bool)
       -> Bool
-    isEnabled _ _ _ (_, False) = False
-    isEnabled patB d r (patA, _) =
+    isEnabledFor _ _ _ (_, False) = False
+    isEnabledFor patB d r (patA, _) =
       case (getAdjacencyRules r) Map.!? (AdjacencyKey patA patB d) of
         Nothing -> error "TODO (fixme): filterPossibility, invalid adjacency rules"
         Just v  -> v
@@ -371,7 +377,7 @@ data RemovePattern
   , propagateCellIx :: (Int, Int) -- ^ The cell index to remove the
                                   -- pattern index from
   }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data WaveState
   = WaveState
@@ -382,6 +388,8 @@ data WaveState
   , waveStateGen                :: StdGen
   , waveStateCellEntropyList    :: MinHeap EntropyCell
   , waveStateRemovePatternStack :: [RemovePattern]
+  -- TODO: REMOVE ME, DEBUGGING
+  , _waveStateSeenRemovals :: Set RemovePattern
   }
 
 mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
@@ -399,6 +407,7 @@ mkWaveState (gridW, gridH) seed patternResult =
      , waveStateGen = gen'
      , waveStateCellEntropyList = entropyList
      , waveStateRemovePatternStack = []
+     , _waveStateSeenRemovals = Set.empty
      }
   where
     buildEntropyList
@@ -466,20 +475,17 @@ collapseAt cellIx = do
   case cells `maybeAt` cellIx of
     Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
     Just cell -> do
-      (collapsedCell, removalPattern) <- collapseCell cell
+      (collapsedCell, patternIx) <- collapseCell cell
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
-          -- TODO: initialize the patternStack with the pattern
-          -- indices to remove at each neighbour based on the
-          -- adjacency rules
-          patternStack' = [ removalPattern ]
+      patternStack' <- forM directions $ getNeighborRemovals cellIx patternIx
       modify $ \s -> s { waveStateGrid = newGrid
                        , waveStateRemainingCells = s.waveStateRemainingCells - 1
-                       , waveStateRemovePatternStack = patternStack'
+                       , waveStateRemovePatternStack = join patternStack'
                        }
   where
-    collapseCell :: Cell -> State WaveState (Cell, RemovePattern)
+    collapseCell :: Cell -> State WaveState (Cell, PatternIndex)
     collapseCell c = do
       patternIx <- pickPatternIx c
       pure
@@ -489,7 +495,7 @@ collapseAt cellIx = do
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = 0.0
             }
-          , RemovePattern patternIx cellIx
+          , patternIx
           )
 
     pickPatternIx :: Cell -> State WaveState PatternIndex
@@ -503,9 +509,9 @@ collapseAt cellIx = do
     go remainder (p:ps) = do
       hints <- gets waveStateFrequencyHints
       let weight = relativeFrequency p hints
-      if remainder >= weight
-        then go (remainder - weight) ps
-        else pure p
+      if remainder < weight
+        then pure p
+        else go (remainder - weight) ps
 
     possiblePatterns :: Array PatternIndex Bool -> [PatternIndex]
     possiblePatterns = map fst . filter snd . Array.assocs
@@ -540,7 +546,12 @@ propagate = do
   case removal of
     Nothing -> pure ()
     Just removePattern -> do
+      seenRemovals <- gets _waveStateSeenRemovals
+      when (removePattern `Set.member` seenRemovals) $ do
+        Debug.traceM "BAH!"
+        pure ()
       eliminate removePattern
+      modify' (\s -> s { _waveStateSeenRemovals = removePattern `Set.insert` seenRemovals })
       propagate
 
 -- 1. The adjacency rules should always hold
@@ -572,7 +583,7 @@ getNeighborRemovals baseCellIx patternIx dir = do
   cell <- getCellAt removeCellIx
   adjacencyRules <- gets waveStateAdjacencyRules
   pure
-    . map (flip RemovePattern removeCellIx)
+    . map (flip RemovePattern removeCellIx) -- <-- Perhaps right here
     $ notEnabled patternIx dir adjacencyRules cell
 
 pushRemovals :: [RemovePattern] -> State WaveState ()

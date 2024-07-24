@@ -84,7 +84,7 @@ main = hspec $ do
   describe "notEnabled" $ do
     let rules = AdjacencyRules
                 $ Map.fromList
-                [ ((AdjacencyKey 0 1 Up), True)
+                [ ((AdjacencyKey 0 1 Up), True) -- HERE
                 , ((AdjacencyKey 0 1 Down), False)
                 , ((AdjacencyKey 0 1 Left'), False)
                 , ((AdjacencyKey 0 1 Right'), False)
@@ -92,7 +92,7 @@ main = hspec $ do
                 , ((AdjacencyKey 0 2 Down), False)
                 , ((AdjacencyKey 0 2 Left'), False)
                 , ((AdjacencyKey 0 2 Right'), False)
-                , ((AdjacencyKey 1 1 Up), False)
+                , ((AdjacencyKey 1 1 Up), False) -- HERE
                 , ((AdjacencyKey 1 1 Down), False)
                 , ((AdjacencyKey 1 1 Left'), False)
                 , ((AdjacencyKey 1 1 Right'), False)
@@ -100,18 +100,22 @@ main = hspec $ do
                 , ((AdjacencyKey 1 2 Down), False)
                 , ((AdjacencyKey 1 2 Left'), False)
                 , ((AdjacencyKey 1 2 Right'), False)
+                , ((AdjacencyKey 2 1 Up), True)  -- HERE
+                , ((AdjacencyKey 2 1 Down), False)
+                , ((AdjacencyKey 2 1 Left'), False)
+                , ((AdjacencyKey 2 1 Right'), False)
                 ]
     context "Given Cell with two possibilities, one possible" $ do
       let cell
             = Cell
-            { cellPossibilities = Array.listArray (0, 1) [True, False]
-            , cellCollapsed = Nothing
+            { cellPossibilities = Array.listArray (0, 2) [True, False, True]
+            , cellCollapsed = Just 0
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = 0.0
             }
       it "should return possibilies that are not enabled" $ do
         let toRemove = notEnabled 1 Up rules cell
-        toRemove `shouldBe` [0]
+        toRemove `shouldBe` [0, 2]
 
       it "should keep enabled possibilities" $ do
         let toRemove = notEnabled 1 Down rules cell
@@ -143,6 +147,7 @@ main = hspec $ do
             , 0, 1, 0, 0
             ]
           patternResult = patterns inputTexture 3
-          initWaveState = mkWaveState (10, 10) 100 patternResult
+          seed = 100
+          initWaveState = mkWaveState (10, 10) seed patternResult
           finalGrid = runWave initWaveState collapseWave
       initWaveState.waveStateGrid /= finalGrid `shouldBe` True
