@@ -198,13 +198,17 @@ emptyAdjacencyRules = AdjacencyRules Map.empty
 allow :: PatternIndex -> PatternIndex -> Direction -> AdjacencyRules -> AdjacencyRules
 allow pA pB dir = AdjacencyRules . Map.insert (AdjacencyKey pA pB dir) True . getAdjacencyRules
 
+disallow :: PatternIndex -> PatternIndex -> Direction -> AdjacencyRules -> AdjacencyRules
+disallow pA pB dir = AdjacencyRules . Map.insert (AdjacencyKey pA pB dir) False . getAdjacencyRules
+
 allowed :: PatternIndex -> PatternIndex -> Direction -> AdjacencyRules -> Maybe Bool
 allowed pA pB dir = Map.lookup (AdjacencyKey pA pB dir) . getAdjacencyRules
 
 generateAdjacencyRules :: Eq a => [Pattern a] -> AdjacencyRules
 generateAdjacencyRules patterns' =
   let patternIndices = [ (x, y) | x <- [0..length patterns' - 1], y <- [0..length patterns' - 1]]
-  in List.foldl' addRule emptyAdjacencyRules patternIndices
+      foo = List.foldl' addRule emptyAdjacencyRules patternIndices
+  in Debug.trace (show foo) $ foo
   where
     addRule :: AdjacencyRules -> (PatternIndex, PatternIndex) -> AdjacencyRules
     addRule rs (aIx, bIx) =
@@ -221,7 +225,7 @@ generateAdjacencyRules patterns' =
           patternB = patterns' List.!! bIx
       in if overlaps patternA patternB d
          then allow aIx bIx d rs'
-         else rs'
+         else disallow aIx bIx d rs'
 
 newtype ColorMap a = ColorMap { getColorMap :: Map PatternIndex a }
   deriving (Eq, Show)
