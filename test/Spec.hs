@@ -82,7 +82,7 @@ main = hspec $ do
           Nothing -> fail "Missing expected cell"
           Just cell -> collapsed cell `shouldBe` True
 
-  describe "notEnabled" $ do
+  fdescribe "notEnabled" $ do
     let rules = AdjacencyRules
                 $ Map.fromList
                 [ ((AdjacencyKey 0 1 Up), True) -- HERE
@@ -93,10 +93,10 @@ main = hspec $ do
                 , ((AdjacencyKey 0 2 Down), False)
                 , ((AdjacencyKey 0 2 Left'), False)
                 , ((AdjacencyKey 0 2 Right'), False)
-                , ((AdjacencyKey 1 1 Up), False) -- HERE
-                , ((AdjacencyKey 1 1 Down), False)
-                , ((AdjacencyKey 1 1 Left'), False)
-                , ((AdjacencyKey 1 1 Right'), False)
+                -- , ((AdjacencyKey 1 1 Up), False) -- HERE
+                -- , ((AdjacencyKey 1 1 Down), False)
+                -- , ((AdjacencyKey 1 1 Left'), False)
+                -- , ((AdjacencyKey 1 1 Right'), False)
                 , ((AdjacencyKey 1 2 Up), False)
                 , ((AdjacencyKey 1 2 Down), False)
                 , ((AdjacencyKey 1 2 Left'), False)

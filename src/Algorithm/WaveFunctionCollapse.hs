@@ -255,6 +255,7 @@ data Cell
   , cellCollapsed            :: Maybe PatternIndex
   , cellTotalWeight          :: Float
   , cellSumOfWeightLogWeight :: Float
+  , cellPatternEnablerCounts :: PatternEnablerCount
   }
   deriving (Eq, Show)
 
@@ -375,9 +376,42 @@ data RemovePattern
   = RemovePattern
   { propagateCellPatternIx :: Int -- ^ The pattern index to remove
   , propagateCellIx :: (Int, Int) -- ^ The cell index to remove the
-                                  -- pattern index from
   }
+                                  -- pattern index from
   deriving (Eq, Ord, Show)
+
+newtype PatternEnablerCount
+  = PatternEnablerCount
+  { getPatternEnablerCount :: Array Int Int
+  }
+  deriving (Eq, Show)
+
+mkPatternEnablerCount :: PatternEnablerCount
+mkPatternEnablerCount
+  = PatternEnablerCount
+  $ Array.listArray (0, length directions) [0, 0, 0, 0]
+
+incrementDirection :: Direction -> PatternEnablerCount -> PatternEnablerCount
+incrementDirection dir counts =
+  let count = counts.getPatternEnablerCount Array.! fromEnum dir
+  in PatternEnablerCount
+  $ counts.getPatternEnablerCount Array.// [(fromEnum dir, count + 1)]
+
+mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> PatternEnablerCount
+mkCellPatternEnablerCount patternResult adjacencyRules =
+  foldl' (ifEnabled adjacencyRules) mkPatternEnablerCount
+  [(p, d) | p <- [0..patternResult.patternResultMaxIndex], d <- directions]
+  where
+    ifEnabled
+      :: AdjacencyRules
+      -> PatternEnablerCount
+      -> (PatternIndex, Direction)
+      -> PatternEnablerCount
+    ifEnabled rules counts (pIx, dir)
+      = foldl' (\c _ -> incrementDirection dir c) counts $ compatible rules pIx dir
+
+compatible :: AdjacencyRules -> PatternIndex -> Direction -> [PatternIndex]
+compatible = undefined
 
 data WaveState
   = WaveState
@@ -475,28 +509,28 @@ collapseAt cellIx = do
   case cells `maybeAt` cellIx of
     Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
     Just cell -> do
-      (collapsedCell, patternIx) <- collapseCell cell
+      collapsedCell <- collapseCell cell
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
-      patternStack' <- forM directions $ getNeighborRemovals cellIx patternIx
+          patternStack'
+            = map (flip RemovePattern cellIx)
+            $ impossiblePatterns collapsedCell.cellPossibilities
       modify $ \s -> s { waveStateGrid = newGrid
                        , waveStateRemainingCells = s.waveStateRemainingCells - 1
-                       , waveStateRemovePatternStack = join patternStack'
+                       , waveStateRemovePatternStack = patternStack'
                        }
   where
-    collapseCell :: Cell -> State WaveState (Cell, PatternIndex)
+    collapseCell :: Cell -> State WaveState Cell
     collapseCell c = do
       patternIx <- pickPatternIx c
       pure
-        $ ( Cell
-            { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
-            , cellCollapsed = Just patternIx
-            , cellTotalWeight = 0.0
-            , cellSumOfWeightLogWeight = 0.0
-            }
-          , patternIx
-          )
+        $ Cell
+        { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
+        , cellCollapsed = Just patternIx
+        , cellTotalWeight = 0.0
+        , cellSumOfWeightLogWeight = 0.0
+        }
 
     pickPatternIx :: Cell -> State WaveState PatternIndex
     pickPatternIx Cell {..} = do
@@ -515,6 +549,9 @@ collapseAt cellIx = do
 
     possiblePatterns :: Array PatternIndex Bool -> [PatternIndex]
     possiblePatterns = map fst . filter snd . Array.assocs
+
+    impossiblePatterns :: Array PatternIndex Bool -> [PatternIndex]
+    impossiblePatterns = map fst . filter (not . snd) . Array.assocs
 
     collapseCellPossibilities
       :: PatternIndex
