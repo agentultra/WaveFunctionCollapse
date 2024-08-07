@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase#-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -136,6 +137,55 @@ main = hspec $ do
       it "should return pattern indices that are no longer enabled" $ do
         let toRemove = notEnabled 1 Up rules cell
         toRemove `shouldBe` [0]
+
+  describe "fromDirection" $ do
+    let inputTexture
+            = textureFromList @Int 4
+            [ 0, 1, 0, 0
+            , 0, 1, 0, 0
+            , 1, 1, 1, 1
+            , 0, 1, 0, 0
+            ]
+        patternResult = patterns inputTexture 3
+        fHints = frequencyHints $ patternResult.patternResultPatterns
+        testGrid = mkGrid 3 3 patternResult fHints
+        dummyCell
+          = Cell
+          { cellPossibilities = Array.listArray (0, 0) [False]
+          , cellCollapsed = Nothing
+          , cellTotalWeight = 0.0
+          , cellSumOfWeightLogWeight = 0.0
+          }
+        expectedCell = \case
+            Up     -> (1,0)
+            Right' -> (2,1)
+            Down   -> (1,2)
+            Left'  -> (0,1)
+    forM_ directions $ \dir -> do
+      it ("returns the dummy cell in direction: " ++ show dir) $ do
+        let cellFromDir = fromDirection testGrid (1,1) dir
+            testGrid' = setCell (expectedCell dir) dummyCell testGrid
+        cellAt cellFromDir testGrid' `shouldBe` cellAt (expectedCell dir) testGrid'
+
+    it "Up wraps around to bottom" $ do
+      let cellFromDir = fromDirection testGrid (0,0) Up
+          testGrid' = setCell (0,2) dummyCell testGrid
+      cellAt cellFromDir testGrid' `shouldBe` cellAt (0,2) testGrid'
+
+    it "Down wraps around to top" $ do
+      let cellFromDir = fromDirection testGrid (0,2) Down
+          testGrid' = setCell (0,0) dummyCell testGrid
+      cellAt cellFromDir testGrid' `shouldBe` cellAt (0,0) testGrid'
+
+    it "Right' wraps around to left" $ do
+      let cellFromDir = fromDirection testGrid (2,0) Right'
+          testGrid' = setCell (0,0) dummyCell testGrid
+      cellAt cellFromDir testGrid' `shouldBe` cellAt (0,0) testGrid'
+
+    it "Left' wraps around to right" $ do
+      let cellFromDir = fromDirection testGrid (0,0) Left'
+          testGrid' = setCell (2,0) dummyCell testGrid
+      cellAt cellFromDir testGrid' `shouldBe` cellAt (2,0) testGrid'
 
   describe "runWave" $ do
     it "returns a Grid changed from what we start with" $ do

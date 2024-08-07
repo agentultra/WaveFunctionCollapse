@@ -680,13 +680,13 @@ fromDirection grid (x, y) dir =
   in case dir of
     Up ->
       let y' = y - 1
-      in (x, if y' < 0 then gridH - 1 else y')
+      in (x, if y' < 0 then gridH else y')
     Right' ->
       let x' = x + 1
-      in (if x' >= gridW then 0 else x', y)
+      in (if x' >= gridW + 1 then 0 else x', y)
     Down ->
       let y' = y + 1
-      in (x, if y' >= gridH then 0 else y')
+      in (x, if y' >= gridH + 1 then 0 else y')
     Left' ->
       let x' = x - 1
-      in (if x' < 0 then gridW - 1 else x', y)
+      in (if x' < 0 then gridW else x', y)
