@@ -255,7 +255,7 @@ data Cell
   , cellCollapsed            :: Maybe PatternIndex
   , cellTotalWeight          :: Float
   , cellSumOfWeightLogWeight :: Float
-  , cellPatternEnablerCounts :: PatternEnablerCount
+  , cellPatternEnablerCounts :: [PatternEnablerCount] -- ^ Indexed by PatternA pattern index
   }
   deriving (Eq, Show)
 
@@ -264,13 +264,14 @@ data Cell
 --
 -- As the algorithm proceeds we will eliminate possibilities and
 -- collapse cells.
-mkCell :: PatternResult a -> FrequencyHints -> Cell
-mkCell PatternResult {..} hints
+mkCell :: PatternResult a -> FrequencyHints -> AdjacencyRules -> Cell
+mkCell p@PatternResult {..} hints adjacencyRules
   = Cell
   { cellPossibilities        = allPossibilities
   , cellCollapsed            = Nothing
   , cellTotalWeight          = totalWeight allPossibilities hints
   , cellSumOfWeightLogWeight = sumOfWeightLogWeight allPossibilities hints
+  , cellPatternEnablerCounts = mkCellPatternEnablerCount p adjacencyRules
   }
   where
     allPossibilities
@@ -353,11 +354,11 @@ entropy Cell {..} =
 newtype Grid = Grid { getCells :: Array (Int, Int) Cell }
   deriving (Eq, Show)
 
-mkGrid :: Word -> Word -> PatternResult a -> FrequencyHints -> Grid
-mkGrid w h patternResult freqHints
+mkGrid :: Word -> Word -> PatternResult a -> FrequencyHints -> AdjacencyRules -> Grid
+mkGrid w h patternResult freqHints adjacencyRules
   = Grid
   . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
-  $ repeat (mkCell patternResult freqHints)
+  $ repeat (mkCell patternResult freqHints adjacencyRules)
 
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
 cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
@@ -391,27 +392,38 @@ mkPatternEnablerCount
   = PatternEnablerCount
   $ Array.listArray (0, length directions) [0, 0, 0, 0]
 
-incrementDirection :: Direction -> PatternEnablerCount -> PatternEnablerCount
-incrementDirection dir counts =
+incrementDirection :: PatternEnablerCount -> Direction -> PatternEnablerCount
+incrementDirection counts dir =
   let count = counts.getPatternEnablerCount Array.! fromEnum dir
   in PatternEnablerCount
   $ counts.getPatternEnablerCount Array.// [(fromEnum dir, count + 1)]
 
-mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> PatternEnablerCount
+decrementDirection :: PatternEnablerCount -> Direction -> PatternEnablerCount
+decrementDirection counts dir =
+  let count = counts.getPatternEnablerCount Array.! fromEnum dir
+  in PatternEnablerCount
+  $ counts.getPatternEnablerCount Array.// [(fromEnum dir, count - 1)]
+
+containsZeroCount :: PatternEnablerCount -> Bool
+containsZeroCount = undefined
+
+mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> [PatternEnablerCount]
 mkCellPatternEnablerCount patternResult adjacencyRules =
-  foldl' (ifEnabled adjacencyRules) mkPatternEnablerCount
-  [(p, d) | p <- [0..patternResult.patternResultMaxIndex], d <- directions]
+  [ initPatternEnablerCount p d | p <- [0..patternResult.patternResultMaxIndex], d <- directions ]
   where
-    ifEnabled
-      :: AdjacencyRules
-      -> PatternEnablerCount
-      -> (PatternIndex, Direction)
-      -> PatternEnablerCount
-    ifEnabled rules counts (pIx, dir)
-      = foldl' (\c _ -> incrementDirection dir c) counts $ compatible rules pIx dir
+    initPatternEnablerCount :: PatternIndex -> Direction -> PatternEnablerCount
+    initPatternEnablerCount pIx dir
+      = foldl' (\counts _ -> incrementDirection counts dir) mkPatternEnablerCount
+      $ compatible adjacencyRules pIx dir
 
 compatible :: AdjacencyRules -> PatternIndex -> Direction -> [PatternIndex]
-compatible = undefined
+compatible adjacencyRules patternIx dir
+  = map (patternB . fst)
+  . filter ((\(AdjacencyKey patA _ d) -> patA == patternIx && d == dir) . fst)
+  . filter snd
+  . Map.toList
+  . getAdjacencyRules
+  $ adjacencyRules
 
 data WaveState
   = WaveState
@@ -429,7 +441,8 @@ data WaveState
 mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
 mkWaveState (gridW, gridH) seed patternResult =
   let freqHints = frequencyHints patternResult.patternResultPatterns
-      grid = mkGrid gridW gridH patternResult freqHints
+      adjacencyRules = generateAdjacencyRules patternResult.patternResultPatterns
+      grid = mkGrid gridW gridH patternResult freqHints adjacencyRules
       gen = mkStdGen seed
       (entropyList, gen')
         = buildEntropyList gen (Array.assocs . getCells $ grid) Heap.empty
@@ -580,16 +593,28 @@ collapseAt cellIx = do
 propagate :: State WaveState ()
 propagate = do
   removal <- popRemoveStack
+  adjacencyRules <- gets waveStateAdjacencyRules
   case removal of
     Nothing -> pure ()
     Just removePattern -> do
-      seenRemovals <- gets _waveStateSeenRemovals
-      when (removePattern `Set.member` seenRemovals) $ do
-        Debug.traceM "BAH!"
-        pure ()
-      eliminate removePattern
-      modify' (\s -> s { _waveStateSeenRemovals = removePattern `Set.insert` seenRemovals })
+      forM_ directions $ \dir -> do
+        let neighbourCoord :: (Int, Int) = _
+        neighbourCell <- getCellAt neighbourCoord
+        forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
+          let enablerCounts = neighbourCell.cellPatternEnablerCounts List.!! compatiblePattern
+          when (not $ containsZeroCount enablerCounts) $
+            modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
+            -- possibly do something about contradiction?
+            -- TODO: update entropy list
+            -- TODO: add removal to stack
+          modifyCellAt neighbourCoord updateCellEnablerCount
       propagate
+  where
+    updateCellEnablerCount :: Cell -> Either String Cell
+    updateCellEnablerCount = undefined
+
+    removePatternFromCell :: PatternIndex -> Cell -> Either String Cell
+    removePatternFromCell = undefined
 
 -- 1. The adjacency rules should always hold
 -- 2. The remaining possible cell values of my neighbours must always
@@ -641,7 +666,7 @@ modifyCellAt cellIx f = do
       putCellAt cellIx cell'
   where
     cellEntropyChanged :: Cell -> Cell -> Bool
-    cellEntropyChanged (Cell _ _ weightX logWeightX) (Cell _ _ weightY logWeightY)
+    cellEntropyChanged (Cell _ _ _ weightX logWeightX) (Cell _ _ _ weightY logWeightY)
       | weightX == weightY && logWeightX == logWeightY = False
       | otherwise                                      = True
 
