@@ -634,7 +634,10 @@ propagate = do
       in Right cell'
 
     removePatternFromCell :: PatternIndex -> Cell -> Either String Cell
-    removePatternFromCell = undefined
+    removePatternFromCell patternIx cell
+      = Right cell
+      { cellPossibilities = cell.cellPossibilities Array.// [(patternIx, False)]
+      }
 
 -- 1. The adjacency rules should always hold
 -- 2. The remaining possible cell values of my neighbours must always
