@@ -405,7 +405,12 @@ decrementDirection counts dir =
   $ counts.getPatternEnablerCount Array.// [(fromEnum dir, count - 1)]
 
 containsZeroCount :: PatternEnablerCount -> Bool
-containsZeroCount = undefined
+containsZeroCount (PatternEnablerCount enablerCount) =
+  any (== 0) $ Array.elems enablerCount
+
+getEnablerCount :: PatternEnablerCount -> Direction -> Int
+getEnablerCount (PatternEnablerCount enablerCount) dir =
+  enablerCount Array.! fromEnum dir
 
 mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> [PatternEnablerCount]
 mkCellPatternEnablerCount patternResult adjacencyRules =
@@ -603,12 +608,13 @@ propagate = do
         neighbourCell <- getCellAt neighbourCoord
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
           let enablerCounts = neighbourCell.cellPatternEnablerCounts List.!! compatiblePattern
-          when (not $ containsZeroCount enablerCounts) $
+          when (getEnablerCount enablerCounts dir == 1 && (not $ containsZeroCount enablerCounts)) $ do
             modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
           -- possibly do something about contradiction?
-          addEntropyCell neighbourCoord
-          pushRemovals [RemovePattern compatiblePattern neighbourCoord]
-          modifyCellAt neighbourCoord updateCellEnablerCount
+            addEntropyCell neighbourCoord
+            pushRemovals [RemovePattern compatiblePattern neighbourCoord]
+            modifyCellAt neighbourCoord updateCellEnablerCount
+          -- TODO: decrementNeighbourCounts enablerCounts dir
       propagate
   where
     updateCellEnablerCount :: Cell -> Either String Cell
