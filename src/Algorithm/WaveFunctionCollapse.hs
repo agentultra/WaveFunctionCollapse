@@ -598,15 +598,16 @@ propagate = do
     Nothing -> pure ()
     Just removePattern -> do
       forM_ directions $ \dir -> do
-        let neighbourCoord :: (Int, Int) = _
+        grid <- gets waveStateGrid
+        let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
         neighbourCell <- getCellAt neighbourCoord
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
           let enablerCounts = neighbourCell.cellPatternEnablerCounts List.!! compatiblePattern
           when (not $ containsZeroCount enablerCounts) $
             modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
-            -- possibly do something about contradiction?
-            -- TODO: update entropy list
-            -- TODO: add removal to stack
+          -- possibly do something about contradiction?
+          addEntropyCell neighbourCoord
+          pushRemovals [RemovePattern compatiblePattern neighbourCoord]
           modifyCellAt neighbourCoord updateCellEnablerCount
       propagate
   where
@@ -752,3 +753,20 @@ fromDirection grid (x, y) dir =
     Left' ->
       let x' = x - 1
       in (if x' < 0 then gridW else x', y)
+
+neighbourForDirection :: Grid -> (Int, Int) -> Direction -> (Int, Int)
+neighbourForDirection grid (x, y) dir =
+  let (gridW, gridH) = snd . Array.bounds $ getCells grid
+  in case dir of
+    Up ->
+      let y' = y + 1
+      in (x, if y' >= gridH + 1 then 0 else y')
+    Right' ->
+      let x' = x - 1
+      in (if x' < 0 then gridW else x', y)
+    Down ->
+      let y' = y - 1
+      in (x, if y' < 0 then gridH else y')
+    Left' ->
+      let x' = x + 1
+      in (if x' >= gridW + 1 then 0 else x', y)
