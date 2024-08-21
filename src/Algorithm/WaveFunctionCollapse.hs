@@ -255,7 +255,7 @@ data Cell
   , cellCollapsed            :: Maybe PatternIndex
   , cellTotalWeight          :: Float
   , cellSumOfWeightLogWeight :: Float
-  , cellPatternEnablerCounts :: [PatternEnablerCount] -- ^ Indexed by PatternA pattern index
+  , cellPatternEnablerCounts :: Array Int PatternEnablerCount -- ^ Indexed by PatternA pattern index
   }
   deriving (Eq, Show)
 
@@ -412,8 +412,10 @@ getEnablerCount :: PatternEnablerCount -> Direction -> Int
 getEnablerCount (PatternEnablerCount enablerCount) dir =
   enablerCount Array.! fromEnum dir
 
-mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> [PatternEnablerCount]
+mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> Array Int PatternEnablerCount
 mkCellPatternEnablerCount patternResult adjacencyRules =
+  Array.listArray
+  (0, patternResult.patternResultMaxIndex)
   [ initPatternEnablerCount p d | p <- [0..patternResult.patternResultMaxIndex], d <- directions ]
   where
     initPatternEnablerCount :: PatternIndex -> Direction -> PatternEnablerCount
@@ -607,18 +609,29 @@ propagate = do
         let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
         neighbourCell <- getCellAt neighbourCoord
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
-          let enablerCounts = neighbourCell.cellPatternEnablerCounts List.!! compatiblePattern
+          let enablerCounts = neighbourCell.cellPatternEnablerCounts Array.! compatiblePattern
           when (getEnablerCount enablerCounts dir == 1 && (not $ containsZeroCount enablerCounts)) $ do
             modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
           -- possibly do something about contradiction?
             addEntropyCell neighbourCoord
             pushRemovals [RemovePattern compatiblePattern neighbourCoord]
-            modifyCellAt neighbourCoord updateCellEnablerCount
           -- TODO: decrementNeighbourCounts enablerCounts dir
+          modifyCellAt neighbourCoord
+            (decrementNeighbourEnablerCounts compatiblePattern enablerCounts dir)
       propagate
   where
-    updateCellEnablerCount :: Cell -> Either String Cell
-    updateCellEnablerCount = undefined
+    decrementNeighbourEnablerCounts
+      :: PatternIndex
+      -> PatternEnablerCount
+      -> Direction
+      -> Cell
+      -> Either String Cell
+    decrementNeighbourEnablerCounts patternIx enablerCounts dir cell =
+      let cell' = cell
+                  { cellPatternEnablerCounts =
+                    cell.cellPatternEnablerCounts Array.// [(patternIx, decrementDirection enablerCounts dir)]
+                  }
+      in Right cell'
 
     removePatternFromCell :: PatternIndex -> Cell -> Either String Cell
     removePatternFromCell = undefined

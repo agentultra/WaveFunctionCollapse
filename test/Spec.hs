@@ -207,7 +207,7 @@ main = hspec $ do
           , cellCollapsed = Nothing
           , cellTotalWeight = 0.0
           , cellSumOfWeightLogWeight = 0.0
-          , cellPatternEnablerCounts = []
+          , cellPatternEnablerCounts = Array.listArray (0, -1) []
           }
         expectedCell = \case
             Up     -> (1,2)
