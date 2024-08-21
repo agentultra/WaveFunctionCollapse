@@ -361,7 +361,10 @@ mkGrid w h patternResult freqHints adjacencyRules
   $ repeat (mkCell patternResult freqHints adjacencyRules)
 
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
-cellAt cellIx grid = (getCells grid) `maybeAt` cellIx
+cellAt cellIx grid = do
+  Debug.traceM ("START cellAt: " ++ show cellIx)
+  result <- (getCells grid) `maybeAt` cellIx
+  Debug.trace ("END cellAt: " ++ show result) $ pure result
 
 setCell :: (Int, Int) -> Cell -> Grid -> Grid
 setCell cellIx cell grid =
@@ -414,11 +417,10 @@ getEnablerCount (PatternEnablerCount enablerCount) dir =
 
 mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> Array Int PatternEnablerCount
 mkCellPatternEnablerCount patternResult adjacencyRules =
-  Array.listArray
-  (0, patternResult.patternResultMaxIndex)
+  Debug.trace ("mkCellPatternenablercount: " ++ show patternResult.patternResultMaxIndex) $ Array.listArray (0, patternResult.patternResultMaxIndex)
   [ initPatternEnablerCount p d | p <- [0..patternResult.patternResultMaxIndex], d <- directions ]
   where
-    initPatternEnablerCount :: PatternIndex -> Direction -> PatternEnablerCount
+    initPatternEnablerCount :: Int -> Direction -> PatternEnablerCount
     initPatternEnablerCount pIx dir
       = foldl' (\counts _ -> incrementDirection counts dir) mkPatternEnablerCount
       $ compatible adjacencyRules pIx dir
@@ -606,10 +608,27 @@ propagate = do
     Just removePattern -> do
       forM_ directions $ \dir -> do
         grid <- gets waveStateGrid
+        -- Debug.traceM
+        --   $ "START: "
+        --   ++ show removePattern.propagateCellIx
+        --   ++ ", "
+        --   ++ show dir
         let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
+        Debug.traceM
+          $ "AFTER: "
+          ++ show neighbourCoord
+          ++ ", "
+          ++ show (Array.bounds grid.getCells)
         neighbourCell <- getCellAt neighbourCoord
+        --Debug.traceM $ "WOOP: " ++ show neighbourCell
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
+          Debug.traceM
+            $ "BEFORE enablerCounts: "
+            ++ show compatiblePattern
+            ++ ", "
+            ++ show neighbourCell.cellPatternEnablerCounts
           let enablerCounts = neighbourCell.cellPatternEnablerCounts Array.! compatiblePattern
+          Debug.traceM "AFTER enablerCounts"
           when (getEnablerCount enablerCounts dir == 1 && (not $ containsZeroCount enablerCounts)) $ do
             modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
           -- possibly do something about contradiction?
@@ -707,10 +726,11 @@ chooseCell = do
 
 getCellAt :: (Int, Int) -> State WaveState Cell
 getCellAt cellIx = do
+  Debug.traceM "START getCellAt"
   grid <- gets waveStateGrid
   case cellAt cellIx grid of
     Nothing -> error "Fix me: getCellAt"
-    Just cell -> pure cell
+    Just cell -> Debug.trace ("END getCellAt: " ++ show cell) $ pure cell
 
 putCellAt :: (Int, Int) -> Cell -> State WaveState ()
 putCellAt cellIx cell =
@@ -725,10 +745,15 @@ addEntropyCell cellIx = do
         = EntropyCell (noise + entropy cell, cellIx) `Heap.insert` entropyCells
   modify' $ \s -> s { waveStateCellEntropyList = entropyCells' }
 
-maybeAt :: Array.Ix i => Array i e -> i -> Maybe e
+maybeAt :: (Array.Ix i, Show i, Show e) => Array i e -> i -> Maybe e
 maybeAt arr ix
-  | Array.inRange (Array.bounds arr) ix = Just $ arr Array.! ix
-  | otherwise = Nothing
+  | Array.inRange (Array.bounds arr) ix = do
+      Debug.traceM $ "START maybeAt (inRange) ix: " ++ show ix
+      Debug.traceM $ "START maybeAt (inRange) bounds: " ++ (show $ Array.bounds arr)
+      let x = arr Array.! ix
+      Debug.traceM $ "AFTER maybeAt (inRange): " ++ show x
+      pure x
+  | otherwise = Debug.trace "BASDBABSDABSD" $ Nothing
 
 randBetween :: Int -> Int -> State WaveState Int
 randBetween lo hi = do

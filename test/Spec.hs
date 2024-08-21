@@ -83,7 +83,7 @@ main = hspec $ do
           Nothing -> fail "Missing expected cell"
           Just cell -> collapsed cell `shouldBe` True
 
-  fdescribe "notEnabled" $ do
+  describe "notEnabled" $ do
     let rules = AdjacencyRules
                 $ Map.fromList
                 [ ((AdjacencyKey 0 1 Up), True) -- HERE
@@ -240,7 +240,12 @@ main = hspec $ do
           testGrid' = setCell (0,0) dummyCell testGrid
       cellAt cellFromDir testGrid' `shouldBe` cellAt (0,0) testGrid'
 
-  describe "runWave" $ do
+    it "should get in bounds" $ do
+      let cellFromDir = neighbourForDirection testGrid (1,3) Up
+          testGrid' = setCell (1,0) dummyCell testGrid
+      cellAt cellFromDir testGrid' `shouldBe` cellAt (1,0) testGrid'
+
+  fdescribe "runWave" $ do
     it "returns a Grid changed from what we start with" $ do
       let inputTexture
             = textureFromList @Int 4
