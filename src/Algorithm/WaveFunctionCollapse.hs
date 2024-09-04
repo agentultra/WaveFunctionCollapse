@@ -5,8 +5,6 @@
 
 module Algorithm.WaveFunctionCollapse where
 
-import qualified Debug.Trace as Debug
-
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
@@ -361,10 +359,7 @@ mkGrid w h patternResult freqHints adjacencyRules
   $ repeat (mkCell patternResult freqHints adjacencyRules)
 
 cellAt :: (Int, Int) -> Grid -> Maybe Cell
-cellAt cellIx grid = do
-  Debug.traceM ("START cellAt: " ++ show cellIx)
-  result <- (getCells grid) `maybeAt` cellIx
-  Debug.trace ("END cellAt: " ++ show result) $ pure result
+cellAt cellIx grid = getCells grid `maybeAt` cellIx
 
 setCell :: (Int, Int) -> Cell -> Grid -> Grid
 setCell cellIx cell grid =
@@ -393,7 +388,7 @@ newtype PatternEnablerCount
 mkPatternEnablerCount :: PatternEnablerCount
 mkPatternEnablerCount
   = PatternEnablerCount
-  $ Array.listArray (0, length directions) [0, 0, 0, 0]
+  $ Array.listArray (0, length directions - 1) [0, 0, 0, 0]
 
 incrementDirection :: PatternEnablerCount -> Direction -> PatternEnablerCount
 incrementDirection counts dir =
@@ -417,13 +412,13 @@ getEnablerCount (PatternEnablerCount enablerCount) dir =
 
 mkCellPatternEnablerCount :: PatternResult a -> AdjacencyRules -> Array Int PatternEnablerCount
 mkCellPatternEnablerCount patternResult adjacencyRules =
-  Debug.trace ("mkCellPatternenablercount: " ++ show patternResult.patternResultMaxIndex) $ Array.listArray (0, patternResult.patternResultMaxIndex)
-  [ initPatternEnablerCount p d | p <- [0..patternResult.patternResultMaxIndex], d <- directions ]
+  Array.listArray (0, patternResult.patternResultMaxIndex)
+  [ initPatternEnablerCount p | p <- [0..patternResult.patternResultMaxIndex] ]
   where
-    initPatternEnablerCount :: Int -> Direction -> PatternEnablerCount
-    initPatternEnablerCount pIx dir
-      = foldl' (\counts _ -> incrementDirection counts dir) mkPatternEnablerCount
-      $ compatible adjacencyRules pIx dir
+    initPatternEnablerCount :: Int -> PatternEnablerCount
+    initPatternEnablerCount pIx = PatternEnablerCount $
+      Array.listArray (0, length directions - 1)
+      [ length $ compatible adjacencyRules pIx dir | dir <- directions ]
 
 compatible :: AdjacencyRules -> PatternIndex -> Direction -> [PatternIndex]
 compatible adjacencyRules patternIx dir
@@ -547,11 +542,9 @@ collapseAt cellIx = do
     collapseCell c = do
       patternIx <- pickPatternIx c
       pure
-        $ Cell
+        $ c
         { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
         , cellCollapsed = Just patternIx
-        , cellTotalWeight = 0.0
-        , cellSumOfWeightLogWeight = 0.0
         }
 
     pickPatternIx :: Cell -> State WaveState PatternIndex
@@ -608,33 +601,15 @@ propagate = do
     Just removePattern -> do
       forM_ directions $ \dir -> do
         grid <- gets waveStateGrid
-        -- Debug.traceM
-        --   $ "START: "
-        --   ++ show removePattern.propagateCellIx
-        --   ++ ", "
-        --   ++ show dir
         let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
-        Debug.traceM
-          $ "AFTER: "
-          ++ show neighbourCoord
-          ++ ", "
-          ++ show (Array.bounds grid.getCells)
         neighbourCell <- getCellAt neighbourCoord
-        --Debug.traceM $ "WOOP: " ++ show neighbourCell
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
-          Debug.traceM
-            $ "BEFORE enablerCounts: "
-            ++ show compatiblePattern
-            ++ ", "
-            ++ show neighbourCell.cellPatternEnablerCounts
           let enablerCounts = neighbourCell.cellPatternEnablerCounts Array.! compatiblePattern
-          Debug.traceM "AFTER enablerCounts"
           when (getEnablerCount enablerCounts dir == 1 && (not $ containsZeroCount enablerCounts)) $ do
             modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
-          -- possibly do something about contradiction?
+            -- possibly do something about contradiction?
             addEntropyCell neighbourCoord
             pushRemovals [RemovePattern compatiblePattern neighbourCoord]
-          -- TODO: decrementNeighbourCounts enablerCounts dir
           modifyCellAt neighbourCoord
             (decrementNeighbourEnablerCounts compatiblePattern enablerCounts dir)
       propagate
@@ -726,11 +701,10 @@ chooseCell = do
 
 getCellAt :: (Int, Int) -> State WaveState Cell
 getCellAt cellIx = do
-  Debug.traceM "START getCellAt"
   grid <- gets waveStateGrid
   case cellAt cellIx grid of
     Nothing -> error "Fix me: getCellAt"
-    Just cell -> Debug.trace ("END getCellAt: " ++ show cell) $ pure cell
+    Just cell -> pure cell
 
 putCellAt :: (Int, Int) -> Cell -> State WaveState ()
 putCellAt cellIx cell =
@@ -747,13 +721,8 @@ addEntropyCell cellIx = do
 
 maybeAt :: (Array.Ix i, Show i, Show e) => Array i e -> i -> Maybe e
 maybeAt arr ix
-  | Array.inRange (Array.bounds arr) ix = do
-      Debug.traceM $ "START maybeAt (inRange) ix: " ++ show ix
-      Debug.traceM $ "START maybeAt (inRange) bounds: " ++ (show $ Array.bounds arr)
-      let x = arr Array.! ix
-      Debug.traceM $ "AFTER maybeAt (inRange): " ++ show x
-      pure x
-  | otherwise = Debug.trace "BASDBABSDABSD" $ Nothing
+  | Array.inRange (Array.bounds arr) ix = pure $ arr Array.! ix
+  | otherwise = Nothing
 
 randBetween :: Int -> Int -> State WaveState Int
 randBetween lo hi = do
