@@ -42,8 +42,26 @@ main = hspec $ do
              , 3, 1, 1
              , 3, 1, 1
              ]
+          p3 = Pattern @Int 3
+             $ Array.listArray ((0,0), (2,2))
+             [ 3, 2, 3
+             , 3, 3, 3
+             , 1, 1, 1
+             ]
+          p4 = Pattern @Int 3
+             $ Array.listArray ((0,0), (2,2))
+             [ 3, 2, 3
+             , 3, 2, 3
+             , 3, 3, 3
+             ]
       it "should overlap on Up" $ do
         overlaps p1 p2 Up `shouldBe` True
+
+      it "should overlap on Right'" $ do
+        overlaps p3 p4 Right' `shouldBe` True
+
+      it "should not overlap on Right'" $ do
+        overlaps p3 p4 Left' `shouldBe` False
 
       it "should not overlap on any others" $ do
         forM_ [Right', Down, Left'] $ \dir -> do
