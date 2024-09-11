@@ -5,6 +5,8 @@
 
 module Algorithm.WaveFunctionCollapse where
 
+import qualified Debug.Trace as Debug
+
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
@@ -162,7 +164,10 @@ newtype FrequencyHints = FrequencyHints { getFrequencyHints :: Map PatternIndex 
   deriving (Eq, Show)
 
 relativeFrequency :: PatternIndex -> FrequencyHints -> Int
-relativeFrequency ix = maybe 0 id . Map.lookup ix . getFrequencyHints
+relativeFrequency ix hints =
+  let hintMap = getFrequencyHints hints
+      ixFrequencyHint = maybe 0 id . Map.lookup ix $ hintMap
+  in floor $ fromIntegral ixFrequencyHint * log (fromIntegral ixFrequencyHint)
 
 frequencyHints :: Ord a => [Pattern a] -> FrequencyHints
 frequencyHints ps = FrequencyHints . go Map.empty ps . zip [0..] $ ps
@@ -252,7 +257,7 @@ data Cell
   { cellPossibilities        :: Array PatternIndex Bool
   , cellCollapsed            :: Maybe PatternIndex
   , cellTotalWeight          :: Float
-  , cellSumOfWeightLogWeight :: Float
+  , cellSumOfWeightLogWeight :: ActualFloat
   , cellPatternEnablerCounts :: Array Int PatternEnablerCount -- ^ Indexed by PatternA pattern index
   }
   deriving (Eq, Show)
@@ -335,19 +340,19 @@ totalPossibleTileFrequency possibilities hints =
 totalWeight :: Array PatternIndex Bool -> FrequencyHints -> Float
 totalWeight possibilities hints = fromIntegral $ totalPossibleTileFrequency possibilities hints
 
-sumOfWeightLogWeight :: Array PatternIndex Bool -> FrequencyHints -> Float
+sumOfWeightLogWeight :: Array PatternIndex Bool -> FrequencyHints -> ActualFloat
 sumOfWeightLogWeight possibilities hints
-  = sum . map toLogWeight . Array.assocs $ possibilities
+  = actualFloat . sum . map toLogWeight . Array.assocs $ possibilities
   where
     toLogWeight :: (PatternIndex, Bool) -> Float
     toLogWeight (ix, True) =
-      let rf = fromIntegral $ relativeFrequency ix hints
-      in rf * (logBase 2.0 rf)
+      let rf = relativeFrequency ix hints
+      in fromIntegral rf * (fromIntegral $ log2 $ fromIntegral rf)
     toLogWeight (_, False) = 0
 
 entropy :: Cell -> Float
 entropy Cell {..} =
-  (logBase 2.0 cellTotalWeight) - (cellSumOfWeightLogWeight / cellTotalWeight)
+  (logBase 2.0 cellTotalWeight) - (cellSumOfWeightLogWeight.getActualFloat / cellTotalWeight)
 
 newtype Grid = Grid { getCells :: Array (Int, Int) Cell }
   deriving (Eq, Show)
@@ -521,6 +526,7 @@ isCollapsedAt cellIx = do
 
 collapseAt :: (Int, Int) -> State WaveState ()
 collapseAt cellIx = do
+  Debug.traceM $ "collapseAt: " ++ show cellIx
   WaveState {..} <- get
   let cells = getCells waveStateGrid
   case cells `maybeAt` cellIx of
@@ -558,7 +564,7 @@ collapseAt cellIx = do
     go remainder (p:ps) = do
       hints <- gets waveStateFrequencyHints
       let weight = relativeFrequency p hints
-      if remainder < weight
+      if remainder <= weight
         then pure p
         else go (remainder - weight) ps
 
@@ -786,3 +792,19 @@ neighbourForDirection grid (x, y) dir =
     Left' ->
       let x' = x + 1
       in (if x' >= gridW + 1 then 0 else x', y)
+
+newtype ActualFloat = ActualFloat { getActualFloat :: Float }
+  deriving (Eq, Show)
+
+actualFloat :: Float -> ActualFloat
+actualFloat x
+  | isNaN x = error "Expected an actual float, found a NaN"
+  | otherwise = ActualFloat x
+
+log2 :: Integer -> Int
+log2 = imLog 2
+
+imLog b x = if x < b then 0 else (x `div` b^l) `doDiv` l
+  where
+    l = 2 * imLog (b * b) x
+    doDiv x' l' = if x' < b then l' else (x' `div` b) `doDiv` (l' + 1)

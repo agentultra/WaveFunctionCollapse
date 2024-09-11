@@ -113,7 +113,7 @@ main = hspec $ do
             { cellPossibilities = Array.listArray (0, 2) [True, False, True]
             , cellCollapsed = Just 0
             , cellTotalWeight = 0.0
-            , cellSumOfWeightLogWeight = 0.0
+            , cellSumOfWeightLogWeight = ActualFloat 0.0
             }
       it "should return possibilies that are not enabled" $ do
         let toRemove = notEnabled 1 Up rules cell
@@ -129,7 +129,7 @@ main = hspec $ do
             { cellPossibilities = Array.listArray (0, 1) [True, True]
             , cellCollapsed = Nothing
             , cellTotalWeight = 0.0
-            , cellSumOfWeightLogWeight = 0.0
+            , cellSumOfWeightLogWeight = ActualFloat 0.0
             }
       xit "should not consider rules that aren't allowed" $ do
         let toRemove = notEnabled 1 Down rules cell
@@ -156,7 +156,7 @@ main = hspec $ do
           { cellPossibilities = Array.listArray (0, 0) [False]
           , cellCollapsed = Nothing
           , cellTotalWeight = 0.0
-          , cellSumOfWeightLogWeight = 0.0
+          , cellSumOfWeightLogWeight = ActualFloat 0.0
           }
         expectedCell = \case
             Up     -> (1,0)
@@ -206,7 +206,7 @@ main = hspec $ do
           { cellPossibilities = Array.listArray (0, 0) [False]
           , cellCollapsed = Nothing
           , cellTotalWeight = 0.0
-          , cellSumOfWeightLogWeight = 0.0
+          , cellSumOfWeightLogWeight = ActualFloat 0.0
           , cellPatternEnablerCounts = Array.listArray (0, -1) []
           }
         expectedCell = \case
@@ -248,7 +248,7 @@ main = hspec $ do
   fdescribe "runWave" $ do
     it "returns a Grid changed from what we start with" $ do
       let inputTexture
-            = textureFromList @Int 4
+            = textureFromList @Int 3
             [ 0, 1, 0, 0
             , 0, 1, 0, 0
             , 1, 1, 1, 1
