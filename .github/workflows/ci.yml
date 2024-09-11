@@ -3,7 +3,7 @@ on: [push, pull_request]
 
 jobs:
   build-ghc:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
     - uses: haskell-actions/setup@v2
