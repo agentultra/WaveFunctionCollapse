@@ -329,6 +329,12 @@ checkCollapsed arr =
     ExactlyOne ix -> Right (Just ix)
     ExactlyMore -> Right Nothing
 
+isContradiction :: Cell -> Bool
+isContradiction cell =
+  case exactlyOne id cell.cellPossibilities of
+    ExactlyNone -> True
+    _           -> False
+
 totalPossibleTileFrequency :: Array PatternIndex Bool -> FrequencyHints -> Int
 totalPossibleTileFrequency possibilities hints =
   foldl' sumPossibleCell 0 $ Array.assocs possibilities
@@ -533,6 +539,7 @@ collapseAt cellIx = do
     Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
     Just cell -> do
       collapsedCell <- collapseCell cell
+      Debug.traceM $ "collapseAt (checkCollapsed): " ++ (show $ checkCollapsed collapsedCell.cellPossibilities)
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
@@ -605,20 +612,22 @@ propagate = do
   case removal of
     Nothing -> pure ()
     Just removePattern -> do
+      Debug.traceM $ "propagate (removePattern): " ++ show removePattern
       forM_ directions $ \dir -> do
         grid <- gets waveStateGrid
         let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
         neighbourCell <- getCellAt neighbourCoord
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
           let enablerCounts = neighbourCell.cellPatternEnablerCounts Array.! compatiblePattern
+          Debug.traceM $ "propagate (enablerCounts): " ++ show enablerCounts
           when (getEnablerCount enablerCounts dir == 1 && (not $ containsZeroCount enablerCounts)) $ do
             modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
-            -- possibly do something about contradiction?
+            when (isContradiction neighbourCell) $ error $ "CONTRADICTION propagate: " ++ (show neighbourCoord) ++ " patternIx " ++ show compatiblePattern
             addEntropyCell neighbourCoord
             pushRemovals [RemovePattern compatiblePattern neighbourCoord]
           modifyCellAt neighbourCoord
             (decrementNeighbourEnablerCounts compatiblePattern enablerCounts dir)
-      propagate
+        propagate
   where
     decrementNeighbourEnablerCounts
       :: PatternIndex
