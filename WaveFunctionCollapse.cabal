@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -26,7 +26,6 @@ source-repository head
 library
   exposed-modules:
       Algorithm.WaveFunctionCollapse
-      Lib
   other-modules:
       Paths_WaveFunctionCollapse
   autogen-modules:
@@ -44,7 +43,7 @@ library
     , random
   default-language: Haskell2010
 
-executable WaveFunctionCollapse-exe
+executable wfc-test
   main-is: Main.hs
   other-modules:
       Paths_WaveFunctionCollapse
@@ -56,6 +55,11 @@ executable WaveFunctionCollapse-exe
   build-depends:
       WaveFunctionCollapse
     , base >=4.7 && <5
+    , filepath
+    , linear
+    , optparse-applicative
+    , sdl2
+    , sdl2-image
   default-language: Haskell2010
 
 test-suite WaveFunctionCollapse-test

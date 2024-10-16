@@ -44,7 +44,7 @@ library:
     - random
 
 executables:
-  WaveFunctionCollapse-exe:
+  wfc-test:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -52,6 +52,11 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - filepath
+    - linear
+    - optparse-applicative
+    - sdl2
+    - sdl2-image
     - WaveFunctionCollapse
 
 tests:
