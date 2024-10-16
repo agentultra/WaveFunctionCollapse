@@ -5,8 +5,6 @@
 
 module Algorithm.WaveFunctionCollapse where
 
-import qualified Debug.Trace as Debug
-
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
@@ -17,10 +15,6 @@ import qualified Data.Heap as Heap
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
--- TODO: REMOVE ME
-import Data.Set (Set)
-import qualified Data.Set as Set
--- TODO: /REMOVE ME
 import Data.Foldable
 import Data.Maybe
 import System.Random
@@ -449,8 +443,6 @@ data WaveState
   , waveStateGen                :: StdGen
   , waveStateCellEntropyList    :: MinHeap EntropyCell
   , waveStateRemovePatternStack :: [RemovePattern]
-  -- TODO: REMOVE ME, DEBUGGING
-  , _waveStateSeenRemovals :: Set RemovePattern
   }
 
 mkWaveState :: Ord a => (Word, Word) -> Int -> PatternResult a -> WaveState
@@ -469,7 +461,6 @@ mkWaveState (gridW, gridH) seed patternResult =
      , waveStateGen = gen'
      , waveStateCellEntropyList = entropyList
      , waveStateRemovePatternStack = []
-     , _waveStateSeenRemovals = Set.empty
      }
   where
     buildEntropyList
@@ -532,28 +523,27 @@ isCollapsedAt cellIx = do
 
 collapseAt :: (Int, Int) -> State WaveState ()
 collapseAt cellIx = do
-  Debug.traceM $ "collapseAt: " ++ show cellIx
   WaveState {..} <- get
   let cells = getCells waveStateGrid
   case cells `maybeAt` cellIx of
     Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
     Just cell -> do
-      collapsedCell <- collapseCell cell
-      Debug.traceM $ "collapseAt (checkCollapsed): " ++ (show $ checkCollapsed collapsedCell.cellPossibilities)
+      patternIx <- pickPatternIx cell
+      collapsedCell <- collapseCell cell patternIx
       let newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
           patternStack'
             = map (flip RemovePattern cellIx)
-            $ impossiblePatterns collapsedCell.cellPossibilities
+            . filter (== patternIx)
+            $ possiblePatterns collapsedCell.cellPossibilities
       modify $ \s -> s { waveStateGrid = newGrid
                        , waveStateRemainingCells = s.waveStateRemainingCells - 1
                        , waveStateRemovePatternStack = patternStack'
                        }
   where
-    collapseCell :: Cell -> State WaveState Cell
-    collapseCell c = do
-      patternIx <- pickPatternIx c
+    collapseCell :: Cell -> PatternIndex -> State WaveState Cell
+    collapseCell c patternIx = do
       pure
         $ c
         { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
@@ -612,19 +602,19 @@ propagate = do
   case removal of
     Nothing -> pure ()
     Just removePattern -> do
-      Debug.traceM $ "propagate (removePattern): " ++ show removePattern
       forM_ directions $ \dir -> do
         grid <- gets waveStateGrid
         let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
         neighbourCell <- getCellAt neighbourCoord
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
           let enablerCounts = neighbourCell.cellPatternEnablerCounts Array.! compatiblePattern
-          Debug.traceM $ "propagate (enablerCounts): " ++ show enablerCounts
-          when (getEnablerCount enablerCounts dir == 1 && (not $ containsZeroCount enablerCounts)) $ do
-            modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
-            when (isContradiction neighbourCell) $ error $ "CONTRADICTION propagate: " ++ (show neighbourCoord) ++ " patternIx " ++ show compatiblePattern
-            addEntropyCell neighbourCoord
-            pushRemovals [RemovePattern compatiblePattern neighbourCoord]
+          when (getEnablerCount enablerCounts dir == 1) $ do
+            when (not $ containsZeroCount enablerCounts) $ do
+              modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
+              when (isContradiction neighbourCell) $ do
+                error $ "CONTRADICTION propagate: " ++ (show neighbourCoord) ++ " patternIx " ++ show compatiblePattern
+              addEntropyCell neighbourCoord
+              pushRemovals [RemovePattern compatiblePattern neighbourCoord]
           modifyCellAt neighbourCoord
             (decrementNeighbourEnablerCounts compatiblePattern enablerCounts dir)
         propagate

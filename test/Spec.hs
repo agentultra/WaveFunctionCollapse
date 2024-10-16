@@ -94,10 +94,6 @@ main = hspec $ do
                 , ((AdjacencyKey 0 2 Down), False)
                 , ((AdjacencyKey 0 2 Left'), False)
                 , ((AdjacencyKey 0 2 Right'), False)
-                -- , ((AdjacencyKey 1 1 Up), False) -- HERE
-                -- , ((AdjacencyKey 1 1 Down), False)
-                -- , ((AdjacencyKey 1 1 Left'), False)
-                -- , ((AdjacencyKey 1 1 Right'), False)
                 , ((AdjacencyKey 1 2 Up), False)
                 , ((AdjacencyKey 1 2 Down), False)
                 , ((AdjacencyKey 1 2 Left'), False)
@@ -114,6 +110,8 @@ main = hspec $ do
             , cellCollapsed = Just 0
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = ActualFloat 0.0
+            , cellPatternEnablerCounts = Array.listArray (0, -1) []
+
             }
       it "should return possibilies that are not enabled" $ do
         let toRemove = notEnabled 1 Up rules cell
@@ -130,6 +128,7 @@ main = hspec $ do
             , cellCollapsed = Nothing
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = ActualFloat 0.0
+            , cellPatternEnablerCounts = Array.listArray (0, -1) []
             }
       xit "should not consider rules that aren't allowed" $ do
         let toRemove = notEnabled 1 Down rules cell
@@ -157,6 +156,7 @@ main = hspec $ do
           , cellCollapsed = Nothing
           , cellTotalWeight = 0.0
           , cellSumOfWeightLogWeight = ActualFloat 0.0
+          , cellPatternEnablerCounts = Array.listArray (0, -1) []
           }
         expectedCell = \case
             Up     -> (1,0)
