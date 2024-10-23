@@ -26,17 +26,16 @@ parseOptions = do
 main :: IO ()
 main = do
   options <- execParser $ info parseOptions fullDesc
-  img <- Image.load options.image
-  print options
   initializeAll
   Image.initialize [Image.InitPNG]
   window <- createWindow "My SDL Application" defaultWindow
   renderer <- createRenderer window (-1) defaultRenderer
+  img <- Image.loadTexture renderer options.image
   appLoop img renderer
   destroyWindow window
 
-appLoop :: Surface -> Renderer -> IO ()
-appLoop imgSurface renderer = do
+appLoop :: Texture -> Renderer -> IO ()
+appLoop imgTexture renderer = do
   events <- pollEvents
   let eventIsQPress event =
         case eventPayload event of
@@ -48,5 +47,6 @@ appLoop imgSurface renderer = do
   rendererDrawColor renderer $= V4 0 0 255 255
   clear renderer
   -- TODO (james): render the input surface
+  copy renderer imgTexture Nothing Nothing
   present renderer
-  unless qPressed (appLoop imgSurface renderer)
+  unless qPressed (appLoop imgTexture renderer)
