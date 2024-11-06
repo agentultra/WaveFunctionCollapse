@@ -475,6 +475,9 @@ mkWaveState (gridW, gridH) seed patternResult =
             = Heap.insert (EntropyCell (entropy cell + noise, cellIx)) accHeap
       in buildEntropyList gen' cells accHeap'
 
+mkOutputTexture :: PatternResult a -> WaveState -> Texture a
+mkOutputTexture patternResult waveState = undefined
+
 pushRemoveStack :: RemovePattern -> State WaveState ()
 pushRemoveStack v
   = modify'
@@ -489,10 +492,8 @@ popRemoveStack = do
       modify' $ \s -> s { waveStateRemovePatternStack = xs }
       pure $ Just x
 
-runWave :: WaveState -> State WaveState a -> Grid
-runWave initState wave =
-  let finalState = execState wave initState
-  in finalState.waveStateGrid
+runWave :: WaveState -> State WaveState a -> WaveState
+runWave initState = (`execState` initState)
 
 -- For some initialized output grid of cells:
 --   while there are uncollapsed cells:
