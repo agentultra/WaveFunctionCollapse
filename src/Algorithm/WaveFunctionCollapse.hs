@@ -249,23 +249,30 @@ generateColorMap = List.foldl' addPatternElement emptyColorMap . zip [0..]
 data Cell
   = Cell
   { cellPossibilities        :: Array PatternIndex Bool
-  , cellCollapsed            :: Maybe PatternIndex
   , cellTotalWeight          :: Float
   , cellSumOfWeightLogWeight :: ActualFloat
   , cellPatternEnablerCounts :: Array Int PatternEnablerCount -- ^ Indexed by PatternA pattern index
   }
   deriving (Eq, Show)
 
+newtype CollapsedCell = CollapsedCell { collapsedCellPatternIx :: PatternIndex }
+  deriving (Eq, Show)
+
+type GridCell = Either Cell CollapsedCell
+
+getEnablerCounts :: PatternIndex -> GridCell -> PatternEnablerCount
+getEnablerCounts patternIx (Left cell) = cell.cellPatternEnablerCounts Array.! patternIx
+getEnablerCounts _ (Right _)           = mkPatternEnablerCount
+
 -- | Initialize a Cell starting with all patterns as possible values
 -- for the Cell.
 --
 -- As the algorithm proceeds we will eliminate possibilities and
 -- collapse cells.
-mkCell :: PatternResult a -> FrequencyHints -> AdjacencyRules -> Cell
+mkCell :: PatternResult a -> FrequencyHints -> AdjacencyRules -> GridCell
 mkCell p@PatternResult {..} hints adjacencyRules
-  = Cell
+  = Left Cell
   { cellPossibilities        = allPossibilities
-  , cellCollapsed            = Nothing
   , cellTotalWeight          = totalWeight allPossibilities hints
   , cellSumOfWeightLogWeight = sumOfWeightLogWeight allPossibilities hints
   , cellPatternEnablerCounts = mkCellPatternEnablerCount p adjacencyRules
@@ -275,21 +282,19 @@ mkCell p@PatternResult {..} hints adjacencyRules
       = Array.listArray (0, patternResultMaxIndex)
       $ repeat True
 
-collapsed :: Cell -> Bool
-collapsed cell
-  | isJust cell.cellCollapsed = True
-  | otherwise                 = False
+collapsed :: GridCell -> Bool
+collapsed (Right _) = True
+collapsed (Left _)  = False
 
 -- TODO: rename or fix me... seems we've already "picked" the
 -- remaining by collapsing before calling this.
-removePossibility :: FrequencyHints -> PatternIndex -> Cell -> Either String Cell
-removePossibility hints patternIx cell = do
+removePossibility :: FrequencyHints -> PatternIndex -> GridCell -> Either String GridCell
+removePossibility _ _ (Right _) = error "removePossibility: tried to remove possibility from collapsed cell."
+removePossibility hints patternIx (Left cell) = do
   let remaining = cell.cellPossibilities -- Array.// [(patternIx, False)]
-  maybeCollapsed <- checkCollapsed remaining
-  pure
+  pure . Left
     $ Cell
     { cellPossibilities = remaining
-    , cellCollapsed = maybeCollapsed
     , cellTotalWeight = totalWeight remaining hints
     , cellSumOfWeightLogWeight = sumOfWeightLogWeight remaining hints
     }
@@ -299,8 +304,9 @@ removePossibility hints patternIx cell = do
 -- This list of 'PatternIndex' is used to remove those patterns from
 -- the input cell later on because the @patternCheck@ pattern has been
 -- removed from a neighbouring cell.
-notEnabled :: PatternIndex -> Direction -> AdjacencyRules -> Cell -> [PatternIndex]
-notEnabled patternCheck dir rules cell =
+notEnabled :: PatternIndex -> Direction -> AdjacencyRules -> GridCell -> [PatternIndex]
+notEnabled _ _ _ (Right _) = error "notEnabled: cannot handle collapsed cell"
+notEnabled patternCheck dir rules (Left cell) =
   let possibilities = filter snd $ Array.assocs cell.cellPossibilities
   in List.nub [ fst p | p <- possibilities, isEnabledFor patternCheck dir rules p ]
   where
@@ -316,15 +322,9 @@ notEnabled patternCheck dir rules cell =
         Nothing -> error "TODO (fixme): filterPossibility, invalid adjacency rules"
         Just v  -> v
 
-checkCollapsed :: Array PatternIndex Bool -> Either String (Maybe PatternIndex)
-checkCollapsed arr =
-  case exactlyOne id arr of
-    ExactlyNone -> Left "No remaining patterns"
-    ExactlyOne ix -> Right (Just ix)
-    ExactlyMore -> Right Nothing
-
-isContradiction :: Cell -> Bool
-isContradiction cell =
+isContradiction :: GridCell -> Bool
+isContradiction (Right _) = error "isContradiction: doesn't work on collapsed cells."
+isContradiction (Left cell) =
   case exactlyOne id cell.cellPossibilities of
     ExactlyNone -> True
     _           -> False
@@ -350,11 +350,12 @@ sumOfWeightLogWeight possibilities hints
       in fromIntegral rf * (fromIntegral $ log2 $ fromIntegral rf)
     toLogWeight (_, False) = 0
 
-entropy :: Cell -> Float
-entropy Cell {..} =
+entropy :: GridCell -> Float
+entropy (Right _) = error "entropy: Tried to calculate entropy on a collapsed cell"
+entropy (Left Cell {..}) =
   (logBase 2.0 cellTotalWeight) - (cellSumOfWeightLogWeight.getActualFloat / cellTotalWeight)
 
-newtype Grid = Grid { getCells :: Array (Int, Int) Cell }
+newtype Grid = Grid { getCells :: Array (Int, Int) GridCell }
   deriving (Eq, Show)
 
 mkGrid :: Word -> Word -> PatternResult a -> FrequencyHints -> AdjacencyRules -> Grid
@@ -363,10 +364,10 @@ mkGrid w h patternResult freqHints adjacencyRules
   . Array.listArray ((0, 0), (fromIntegral w - 1, fromIntegral h - 1))
   $ repeat (mkCell patternResult freqHints adjacencyRules)
 
-cellAt :: (Int, Int) -> Grid -> Maybe Cell
+cellAt :: (Int, Int) -> Grid -> Maybe GridCell
 cellAt cellIx grid = getCells grid `maybeAt` cellIx
 
-setCell :: (Int, Int) -> Cell -> Grid -> Grid
+setCell :: (Int, Int) -> GridCell -> Grid -> Grid
 setCell cellIx cell grid =
   Grid $ grid.getCells Array.// [(cellIx, cell)]
 
@@ -465,7 +466,7 @@ mkWaveState (gridW, gridH) seed patternResult =
   where
     buildEntropyList
       :: StdGen
-      -> [((Int, Int), Cell)]
+      -> [((Int, Int), GridCell)]
       -> MinHeap EntropyCell
       -> (MinHeap EntropyCell, StdGen)
     buildEntropyList gen [] accHeap = (accHeap, gen)
@@ -530,29 +531,22 @@ collapseAt cellIx = do
     Nothing -> error $ "Invalid grid index in collapseAt: " ++ show cellIx
     Just cell -> do
       patternIx <- pickPatternIx cell
-      collapsedCell <- collapseCell cell patternIx
-      let newGrid
+      let collapsedCell = collapseCell patternIx
+          newGrid
             = Grid
             $ cells Array.// [(cellIx, collapsedCell)]
-          patternStack'
-            = map (flip RemovePattern cellIx)
-            . filter (== patternIx)
-            $ possiblePatterns collapsedCell.cellPossibilities
+          patternStack' = [RemovePattern patternIx cellIx]
       modify $ \s -> s { waveStateGrid = newGrid
                        , waveStateRemainingCells = s.waveStateRemainingCells - 1
                        , waveStateRemovePatternStack = patternStack'
                        }
   where
-    collapseCell :: Cell -> PatternIndex -> State WaveState Cell
-    collapseCell c patternIx = do
-      pure
-        $ c
-        { cellPossibilities = collapseCellPossibilities patternIx c.cellPossibilities
-        , cellCollapsed = Just patternIx
-        }
+    collapseCell :: PatternIndex -> GridCell
+    collapseCell = Right . CollapsedCell
 
-    pickPatternIx :: Cell -> State WaveState PatternIndex
-    pickPatternIx Cell {..} = do
+    pickPatternIx :: GridCell -> State WaveState PatternIndex
+    pickPatternIx (Right _) = error "pickPatternIx: tried to pick a pattern from a collapsed cell"
+    pickPatternIx (Left (Cell {..})) = do
       remaining <- randBetween 0 $ floor cellTotalWeight
       let ps = possiblePatterns cellPossibilities
       go remaining ps
@@ -608,7 +602,7 @@ propagate = do
         let neighbourCoord = neighbourForDirection grid removePattern.propagateCellIx dir
         neighbourCell <- getCellAt neighbourCoord
         forM_ (compatible adjacencyRules removePattern.propagateCellPatternIx dir) $ \compatiblePattern -> do
-          let enablerCounts = neighbourCell.cellPatternEnablerCounts Array.! compatiblePattern
+          let enablerCounts = getEnablerCounts compatiblePattern neighbourCell
           when (getEnablerCount enablerCounts dir == 1) $ do
             when (not $ containsZeroCount enablerCounts) $ do
               modifyCellAt neighbourCoord (removePatternFromCell compatiblePattern)
@@ -624,18 +618,20 @@ propagate = do
       :: PatternIndex
       -> PatternEnablerCount
       -> Direction
-      -> Cell
-      -> Either String Cell
-    decrementNeighbourEnablerCounts patternIx enablerCounts dir cell =
-      let cell' = cell
+      -> GridCell
+      -> Either String GridCell
+    decrementNeighbourEnablerCounts _ _ _ cell@(Right _) = pure cell
+    decrementNeighbourEnablerCounts patternIx enablerCounts dir (Left cell) =
+      let cell' = Left cell
                   { cellPatternEnablerCounts =
                     cell.cellPatternEnablerCounts Array.// [(patternIx, decrementDirection enablerCounts dir)]
                   }
       in Right cell'
 
-    removePatternFromCell :: PatternIndex -> Cell -> Either String Cell
-    removePatternFromCell patternIx cell
-      = Right cell
+    removePatternFromCell :: PatternIndex -> GridCell -> Either String GridCell
+    removePatternFromCell _ (Right _) = error "removePatternFromCell: tried to remove from a collapsed cell"
+    removePatternFromCell patternIx (Left cell)
+      = Right $ Left cell
       { cellPossibilities = cell.cellPossibilities Array.// [(patternIx, False)]
       }
 
@@ -678,7 +674,7 @@ pushRemovals removals = do
     { waveStateRemovePatternStack = s.waveStateRemovePatternStack ++ removals
     }
 
-modifyCellAt :: (Int, Int) -> (Cell -> Either String Cell) -> State WaveState ()
+modifyCellAt :: (Int, Int) -> (GridCell -> Either String GridCell) -> State WaveState ()
 modifyCellAt cellIx f = do
   cell <- getCellAt cellIx
   case f cell of
@@ -688,10 +684,11 @@ modifyCellAt cellIx f = do
         addEntropyCell cellIx
       putCellAt cellIx cell'
   where
-    cellEntropyChanged :: Cell -> Cell -> Bool
-    cellEntropyChanged (Cell _ _ _ weightX logWeightX) (Cell _ _ _ weightY logWeightY)
+    cellEntropyChanged :: GridCell -> GridCell -> Bool
+    cellEntropyChanged (Left (Cell  _ _ weightX logWeightX)) (Left (Cell _ _ weightY logWeightY))
       | weightX == weightY && logWeightX == logWeightY = False
       | otherwise                                      = True
+    cellEntropyChanged _ _ = False
 
 chooseCell :: State WaveState (Int, Int)
 chooseCell = do
@@ -705,14 +702,14 @@ chooseCell = do
       then chooseCell
       else pure cellIx
 
-getCellAt :: (Int, Int) -> State WaveState Cell
+getCellAt :: (Int, Int) -> State WaveState GridCell
 getCellAt cellIx = do
   grid <- gets waveStateGrid
   case cellAt cellIx grid of
     Nothing -> error "Fix me: getCellAt"
     Just cell -> pure cell
 
-putCellAt :: (Int, Int) -> Cell -> State WaveState ()
+putCellAt :: (Int, Int) -> GridCell -> State WaveState ()
 putCellAt cellIx cell =
   modify' $ \s -> s { waveStateGrid = setCell cellIx cell s.waveStateGrid }
 

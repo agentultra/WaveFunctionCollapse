@@ -78,8 +78,8 @@ main = hspec $ do
             , waveStateRemovePatternStack = []
             }
       it "should collapse to a single pattern" $ do
-        let resultGrid = runWave initWaveState $ collapseAt (0, 0)
-        case cellAt (0, 0) resultGrid of
+        let resultState = runWave initWaveState $ collapseAt (0, 0)
+        case cellAt (0, 0) resultState.waveStateGrid of
           Nothing -> fail "Missing expected cell"
           Just cell -> collapsed cell `shouldBe` True
 
@@ -105,9 +105,8 @@ main = hspec $ do
                 ]
     context "Given Cell with two possibilities, one possible" $ do
       let cell
-            = Cell
+            = Left Cell
             { cellPossibilities = Array.listArray (0, 2) [True, False, True]
-            , cellCollapsed = Just 0
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = ActualFloat 0.0
             , cellPatternEnablerCounts = Array.listArray (0, -1) []
@@ -123,9 +122,8 @@ main = hspec $ do
 
     context "Given Cell with two possibilies, all possible" $ do
       let cell
-            = Cell
+            = Left Cell
             { cellPossibilities = Array.listArray (0, 1) [True, True]
-            , cellCollapsed = Nothing
             , cellTotalWeight = 0.0
             , cellSumOfWeightLogWeight = ActualFloat 0.0
             , cellPatternEnablerCounts = Array.listArray (0, -1) []
@@ -151,9 +149,8 @@ main = hspec $ do
         rules = generateAdjacencyRules patternResult.patternResultPatterns
         testGrid = mkGrid 3 3 patternResult fHints rules
         dummyCell
-          = Cell
+          = Left Cell
           { cellPossibilities = Array.listArray (0, 0) [False]
-          , cellCollapsed = Nothing
           , cellTotalWeight = 0.0
           , cellSumOfWeightLogWeight = ActualFloat 0.0
           , cellPatternEnablerCounts = Array.listArray (0, -1) []
@@ -202,9 +199,8 @@ main = hspec $ do
         rules = generateAdjacencyRules patternResult.patternResultPatterns
         testGrid = mkGrid 3 3 patternResult fHints rules
         dummyCell
-          = Cell
+          = Left Cell
           { cellPossibilities = Array.listArray (0, 0) [False]
-          , cellCollapsed = Nothing
           , cellTotalWeight = 0.0
           , cellSumOfWeightLogWeight = ActualFloat 0.0
           , cellPatternEnablerCounts = Array.listArray (0, -1) []
@@ -257,5 +253,5 @@ main = hspec $ do
           patternResult = patterns inputTexture 3
           seed = 100
           initWaveState = mkWaveState (10, 10) seed patternResult
-          finalGrid = runWave initWaveState collapseWave
-      initWaveState.waveStateGrid /= finalGrid `shouldBe` True
+          finalState = runWave initWaveState collapseWave
+      initWaveState.waveStateGrid /= finalState.waveStateGrid `shouldBe` True
