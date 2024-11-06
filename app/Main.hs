@@ -8,8 +8,7 @@ module Main (main) where
 
 import qualified Algorithm.WaveFunctionCollapse as WFC
 import Control.Exception
-import Control.Monad (unless, when)
-import Data.Word
+import Control.Monad (unless)
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
@@ -39,12 +38,8 @@ main = do
   window <- createWindow "My SDL Application" defaultWindow
   renderer <- createRenderer window (-1) defaultRenderer
   img <- Image.load options.image
-  inputTexture <- withSurface img $ \imgSurface -> do
-    (V2 imgW imgH) <- surfaceDimensions imgSurface
-    when (imgW == imgH) $ error "Input image must be square"
-    pixelPtr <- surfacePixels imgSurface
-    pixels <- sequence [getPixel pixelPtr x | x <- [0..(imgW*imgH) - 1]]
-    pure $ WFC.textureFromList (fromIntegral imgW) pixels
+
+  inputTexture <- fromSurface img
 
   print inputTexture
   imgTexture <- createTextureFromSurface renderer img
@@ -66,6 +61,15 @@ appLoop imgTexture renderer = do
   copy renderer imgTexture Nothing Nothing
   present renderer
   unless qPressed (appLoop imgTexture renderer)
+
+fromSurface :: Surface -> IO (WFC.Texture CUInt)
+fromSurface img = withSurface img $ \imgSurface -> do
+  (V2 imgW imgH) <- surfaceDimensions imgSurface
+  print (imgW, imgH)
+  unless (imgW == imgH) $ error "Input image must be square"
+  pixelPtr <- surfacePixels imgSurface
+  pixels <- sequence [getPixel pixelPtr x | x <- [0..(imgW*imgH) - 1]]
+  pure $ WFC.textureFromList (fromIntegral imgW) pixels
 
 getPixel :: Ptr () -> CInt -> IO CUInt
 getPixel voidPixelPtr ix = do
