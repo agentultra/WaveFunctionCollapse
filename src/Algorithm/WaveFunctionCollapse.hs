@@ -175,7 +175,7 @@ frequencyHints ps = FrequencyHints . go Map.empty ps . zip [0..] $ ps
 
 data PatternResult a
   = PatternResult
-  { patternResultPatterns :: [Pattern a]
+  { patternResultPatterns :: [Pattern a] -- TODO (james): convert to Array?
   , patternResultMaxIndex :: PatternIndex
   }
   deriving (Eq, Show)
@@ -476,8 +476,24 @@ mkWaveState (gridW, gridH) seed patternResult =
             = Heap.insert (EntropyCell (entropy cell + noise, cellIx)) accHeap
       in buildEntropyList gen' cells accHeap'
 
-mkOutputTexture :: PatternResult a -> WaveState -> Texture a
-mkOutputTexture patternResult waveState = undefined
+mkOutputTexture :: PatternResult a -> WaveState -> Either String (Texture a)
+mkOutputTexture patternResult waveState = do
+  patternIndices <- traverse getCollapsedPatternIx . getCells $ waveState.waveStateGrid
+  patterns <- traverse (getPattern patternResult) patternIndices
+  -- TODO (james): get rid of fromEnum
+  pure . Texture . fmap getPatternPixel . Array.ixmap (toWordBounds $ Array.bounds patterns) (bimap fromEnum fromEnum) $ patterns
+  where
+    getCollapsedPatternIx :: GridCell -> Either String PatternIndex
+    getCollapsedPatternIx = undefined
+
+    getPattern :: PatternResult a -> PatternIndex -> Either String (Pattern a)
+    getPattern = undefined
+
+    getPatternPixel :: Pattern a -> a
+    getPatternPixel = undefined
+
+    toWordBounds :: ((Int, Int), (Int, Int)) -> ((Word, Word), (Word, Word))
+    toWordBounds = undefined
 
 pushRemoveStack :: RemovePattern -> State WaveState ()
 pushRemoveStack v
