@@ -9,6 +9,7 @@ module Main (main) where
 import qualified Algorithm.WaveFunctionCollapse as WFC
 import Control.Exception
 import Control.Monad (unless, when)
+import Data.Word
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
@@ -66,7 +67,7 @@ appLoop imgTexture renderer = do
   present renderer
   unless qPressed (appLoop imgTexture renderer)
 
-getPixel :: Ptr () -> CInt -> IO Word
+getPixel :: Ptr () -> CInt -> IO CUInt
 getPixel voidPixelPtr ix = do
-  let pixelPtr = castPtr @() @Word voidPixelPtr
+  let pixelPtr = castPtr @() @CUInt voidPixelPtr
   peekElemOff pixelPtr (fromIntegral ix)
