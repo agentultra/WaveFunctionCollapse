@@ -5,6 +5,8 @@
 
 module Algorithm.WaveFunctionCollapse where
 
+import qualified Debug.Trace as Debug
+
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
@@ -479,6 +481,7 @@ mkWaveState (gridW, gridH) seed patternResult =
 mkOutputTexture :: PatternResult a -> WaveState -> Either String (Texture a)
 mkOutputTexture patternResult waveState = do
   patternIndices <- traverse getCollapsedPatternIx . getCells $ waveState.waveStateGrid
+  Debug.traceM "HELLO"
   patterns <- traverse (getPatternFrom patternResult) patternIndices
   -- TODO (james): get rid of fromEnum
   pure . Texture . fmap getPatternPixel . Array.ixmap (toWordBounds $ Array.bounds patterns) (bimap fromEnum fromEnum) $ patterns

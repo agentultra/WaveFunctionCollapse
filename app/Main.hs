@@ -9,6 +9,7 @@ module Main (main) where
 import qualified Algorithm.WaveFunctionCollapse as WFC
 import Control.Exception
 import Control.Monad (unless)
+import qualified Data.Array as Array
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
@@ -42,9 +43,20 @@ main = do
   inputTexture <- fromSurface img
 
   print inputTexture
-  imgTexture <- createTextureFromSurface renderer img
-  appLoop imgTexture renderer
-  destroyWindow window
+
+  let patternResults = WFC.patterns inputTexture 3
+      inputWaveState = WFC.mkWaveState (15, 15) 100 patternResults
+      outputWaveState = WFC.runWave inputWaveState WFC.collapseWave
+
+  case WFC.mkOutputTexture patternResults outputWaveState of
+    Left err -> putStrLn err >> destroyWindow window
+    Right outputWFCTexture -> do
+      print outputWFCTexture
+      img' <- toSurface outputWFCTexture
+
+      imgTexture <- createTextureFromSurface renderer img'
+      appLoop imgTexture renderer
+      destroyWindow window
 
 appLoop :: Texture -> Renderer -> IO ()
 appLoop imgTexture renderer = do
@@ -71,7 +83,21 @@ fromSurface img = withSurface img $ \imgSurface -> do
   pixels <- sequence [getPixel pixelPtr x | x <- [0..(imgW*imgH) - 1]]
   pure $ WFC.textureFromList (fromIntegral imgW) pixels
 
+toSurface :: WFC.Texture CUInt -> IO Surface
+toSurface wfcTexture = do
+  let (_, (tw, th)) = Array.bounds wfcTexture.getTexture
+      twI = fromIntegral tw - 1
+  output <- createRGBSurface (fromIntegral <$> V2 tw th) RGBA8888
+  bracket_ (lockSurface output) (unlockSurface output) $ do
+    voidPixelPtr <- surfacePixels output
+    let pixelPtr = castPtr @() @CUInt voidPixelPtr
+    sequence_ [setPixel pixelPtr ((fromIntegral y * twI) + fromIntegral x) v | ((x, y), v) <- Array.assocs wfcTexture.getTexture]
+  pure output
+
 getPixel :: Ptr () -> CInt -> IO CUInt
 getPixel voidPixelPtr ix = do
   let pixelPtr = castPtr @() @CUInt voidPixelPtr
   peekElemOff pixelPtr (fromIntegral ix)
+
+setPixel :: Ptr CUInt -> Int -> CUInt -> IO ()
+setPixel = pokeByteOff
