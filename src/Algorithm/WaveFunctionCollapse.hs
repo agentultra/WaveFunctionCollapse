@@ -479,21 +479,26 @@ mkWaveState (gridW, gridH) seed patternResult =
 mkOutputTexture :: PatternResult a -> WaveState -> Either String (Texture a)
 mkOutputTexture patternResult waveState = do
   patternIndices <- traverse getCollapsedPatternIx . getCells $ waveState.waveStateGrid
-  patterns <- traverse (getPattern patternResult) patternIndices
+  patterns <- traverse (getPatternFrom patternResult) patternIndices
   -- TODO (james): get rid of fromEnum
   pure . Texture . fmap getPatternPixel . Array.ixmap (toWordBounds $ Array.bounds patterns) (bimap fromEnum fromEnum) $ patterns
   where
+    -- TODO (james): maybe add the grid location?
     getCollapsedPatternIx :: GridCell -> Either String PatternIndex
-    getCollapsedPatternIx = undefined
+    getCollapsedPatternIx (Left _) = Left "mkOutputTexture: tried to get pattern index from un-collapsed cell"
+    getCollapsedPatternIx (Right (CollapsedCell patternIx)) = pure patternIx
 
-    getPattern :: PatternResult a -> PatternIndex -> Either String (Pattern a)
-    getPattern = undefined
+    getPatternFrom :: PatternResult a -> PatternIndex -> Either String (Pattern a)
+    getPatternFrom pResult patternIndex
+      | patternIndex < 0 || patternIndex > pResult.patternResultMaxIndex =
+        Left "mkOutputTexture: tried to get pattern index out of range from collapsed cell"
+      | otherwise = pure $ pResult.patternResultPatterns List.!! patternIndex
 
     getPatternPixel :: Pattern a -> a
-    getPatternPixel = undefined
+    getPatternPixel = (flip (Array.!) (0, 0)) . getPattern
 
     toWordBounds :: ((Int, Int), (Int, Int)) -> ((Word, Word), (Word, Word))
-    toWordBounds = undefined
+    toWordBounds = bimap (bimap toEnum toEnum) (bimap toEnum toEnum)
 
 pushRemoveStack :: RemovePattern -> State WaveState ()
 pushRemoveStack v
