@@ -5,8 +5,6 @@
 
 module Algorithm.WaveFunctionCollapse where
 
-import qualified Debug.Trace as Debug
-
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Array (Array, (!))
@@ -64,6 +62,9 @@ mkTexture fillValue size
   . Array.listArray ((0,0), (size - 1, size - 1))
   $ repeat fillValue
 
+-- TODO (james): load the pixel data from flat array, zip with
+-- row-oriented indices. The texture is rotated weird by
+-- Array.listArray
 textureFromList :: Word -> [a] -> Texture a
 textureFromList size xs
   = Texture
@@ -88,14 +89,14 @@ patterns texture subPatternSize
         ps = [ extractPattern texture (x, y) subPatternSize
              | x :: Word <- [0..upTo], y :: Word <- [0..upTo]
              ]
-    in PatternResult ps (length ps - 1)
+    in PatternResult ps (length ps)
   where
     extractPattern :: Texture a -> (Word, Word) -> Word -> Pattern a
     extractPattern (Texture tex) (x, y) size =
       let w = size - 1
-          indices = [ (a `mod` w, b `mod` w) | a <- [x..x+w], b <- [y..y+w] ]
+          indices = [ (a `mod` size, b `mod` size) | a <- [x..x+w], b <- [y..y+w] ]
           textureElems = foldl' (accumElems tex) [] indices
-      in Pattern size $ Array.listArray ((0, 0), (size - 1, size - 1)) textureElems
+      in Pattern size $ Array.listArray ((0, 0), (w, w)) textureElems
 
     accumElems :: Array (Word, Word) a -> [a] -> (Word, Word) -> [a]
     accumElems tex acc ix = (tex Array.! ix) : acc
@@ -481,7 +482,6 @@ mkWaveState (gridW, gridH) seed patternResult =
 mkOutputTexture :: PatternResult a -> WaveState -> Either String (Texture a)
 mkOutputTexture patternResult waveState = do
   patternIndices <- traverse getCollapsedPatternIx . getCells $ waveState.waveStateGrid
-  Debug.traceM "HELLO"
   patterns <- traverse (getPatternFrom patternResult) patternIndices
   -- TODO (james): get rid of fromEnum
   pure . Texture . fmap getPatternPixel . Array.ixmap (toWordBounds $ Array.bounds patterns) (bimap fromEnum fromEnum) $ patterns

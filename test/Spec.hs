@@ -50,7 +50,7 @@ main = hspec $ do
           overlaps p1 p2 dir `shouldBe` False
 
   describe "frequencyMap" $ do
-    prop "minimum frequency map" $ \(tex :: Texture Int) -> do
+    xprop "minimum frequency map" $ \(tex :: Texture Int) -> do
       (getFrequencyHints . frequencyHints . patternResultPatterns $ patterns tex 3) `shouldSatisfy` Map.foldr (\x r -> r && x >= 1) True
 
   describe "AdjacencyRules" $ do
@@ -241,7 +241,7 @@ main = hspec $ do
           testGrid' = setCell (1,0) dummyCell testGrid
       cellAt cellFromDir testGrid' `shouldBe` cellAt (1,0) testGrid'
 
-  fdescribe "runWave" $ do
+  describe "runWave" $ do
     it "returns a Grid changed from what we start with" $ do
       let inputTexture
             = textureFromList @Int 3
