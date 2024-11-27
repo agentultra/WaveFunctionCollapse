@@ -62,14 +62,12 @@ mkTexture fillValue size
   . Array.listArray ((0,0), (size - 1, size - 1))
   $ repeat fillValue
 
--- TODO (james): load the pixel data from flat array, zip with
--- row-oriented indices. The texture is rotated weird by
--- Array.listArray
+-- TODO (james): check this works
 textureFromList :: Word -> [a] -> Texture a
-textureFromList size xs
+textureFromList size
   = Texture
-  . Array.listArray ((0, 0), (size - 1, size - 1))
-  $ xs
+  . Array.array ((0,0), (size, size))
+  . zip [(x, y) | y <- cycle [0..size], x <- [0..size]]
 
 textureSize :: Texture a -> Word
 textureSize
