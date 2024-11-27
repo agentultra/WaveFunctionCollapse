@@ -62,14 +62,11 @@ mkTexture fillValue size
   . Array.listArray ((0,0), (size - 1, size - 1))
   $ repeat fillValue
 
--- TODO (james): load the pixel data from flat array, zip with
--- row-oriented indices. The texture is rotated weird by
--- Array.listArray
 textureFromList :: Word -> [a] -> Texture a
-textureFromList size xs
+textureFromList size
   = Texture
-  . Array.listArray ((0, 0), (size - 1, size - 1))
-  $ xs
+  . Array.array ((0,0), (size-1, size-1))
+  . rows size
 
 textureSize :: Texture a -> Word
 textureSize
@@ -94,9 +91,9 @@ patterns texture subPatternSize
     extractPattern :: Texture a -> (Word, Word) -> Word -> Pattern a
     extractPattern (Texture tex) (x, y) size =
       let w = size - 1
-          indices = [ (a `mod` size, b `mod` size) | a <- [x..x+w], b <- [y..y+w] ]
+          indices = [ (b `mod` size, a `mod` size) | a <- [x..x+w], b <- [y..y+w] ]
           textureElems = foldl' (accumElems tex) [] indices
-      in Pattern size $ Array.listArray ((0, 0), (w, w)) textureElems
+      in Pattern size . Array.array ((0, 0), (w, w)) . rows size $ textureElems
 
     accumElems :: Array (Word, Word) a -> [a] -> (Word, Word) -> [a]
     accumElems tex acc ix = (tex Array.! ix) : acc
@@ -829,3 +826,6 @@ imLog b x = if x < b then 0 else (x `div` b^l) `doDiv` l
   where
     l = 2 * imLog (b * b) x
     doDiv x' l' = if x' < b then l' else (x' `div` b) `doDiv` (l' + 1)
+
+rows :: Word -> [a] -> [((Word, Word), a)]
+rows size = zip [(x, y) | y <- cycle [0..size-1], x <- [0..size-1]]

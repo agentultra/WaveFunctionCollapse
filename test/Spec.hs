@@ -5,6 +5,7 @@
 
 import Control.Monad
 import qualified Data.Array as Array
+import Data.List (foldl')
 import qualified Data.Heap as Heap
 import qualified Data.Map.Strict as Map
 import Test.Hspec
@@ -12,11 +13,34 @@ import Test.Hspec.QuickCheck
 import Algorithm.WaveFunctionCollapse
 import System.Random
 
+import qualified Debug.Trace as Debug
+
 main :: IO ()
 main = hspec $ do
   describe "patterns" $ do
     prop "sum of sub patterns" $ \(tex :: Texture Int) ->
       (length . patternResultPatterns $ patterns tex 3) `shouldBe` fromIntegral ((textureSize tex) * (textureSize tex))
+
+    context "Given a sub pattern from the 0,0 index of the source texture" $ do
+      fit "should return the matching values for the sub-pattern indices" $ do
+        let tex = textureFromList @Int 4
+                  [ 0, 1, 0, 0
+                  , 0, 1, 0, 0
+                  , 1, 1, 1, 1
+                  , 0, 1, 0, 0
+                  ]
+            -- This only works for the top-left sub-pattern from 0,0
+            -- in the source texture
+            pat = head . patternResultPatterns $ patterns tex 3
+            patIxs = Array.indices pat.getPattern                 -- The pattern indices should
+            texValues = reverse $ foldl' (getValue tex) [] patIxs -- coincide with the source
+            getValue (Texture t) vs ix = t Array.! ix : vs        -- texture indices
+
+        Debug.traceM ("WAAAAAT: " ++ show patIxs)
+        Debug.traceM ("WAT: " ++ show pat)
+        Debug.traceM ("WAT2: " ++ show tex)
+        Debug.traceM ("texValues: " ++ show texValues)
+        texValues `shouldBe` Array.elems pat.getPattern
 
   describe "Pattern" $ do
     prop "full clockwise rotation" $ \(pat :: Pattern Int) ->
@@ -244,7 +268,7 @@ main = hspec $ do
   describe "runWave" $ do
     it "returns a Grid changed from what we start with" $ do
       let inputTexture
-            = textureFromList @Int 3
+            = textureFromList @Int 4
             [ 0, 1, 0, 0
             , 0, 1, 0, 0
             , 1, 1, 1, 1
@@ -254,4 +278,5 @@ main = hspec $ do
           seed = 100
           initWaveState = mkWaveState (10, 10) seed patternResult
           finalState = runWave initWaveState collapseWave
+      Debug.traceM ("here: " ++ show (head patternResult.patternResultPatterns))
       initWaveState.waveStateGrid /= finalState.waveStateGrid `shouldBe` True
