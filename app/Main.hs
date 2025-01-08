@@ -16,6 +16,8 @@ import Foreign.Storable
 import Options.Applicative
 import SDL
 import qualified SDL.Image as Image
+import SDL.Raw.Types (PixelFormat (..))
+import qualified SDL.Raw.Types as Raw
 
 newtype Options
   = Options
@@ -80,7 +82,10 @@ fromSurface img = withSurface img $ \imgSurface -> do
   print (imgW, imgH)
   unless (imgW == imgH) $ error "Input image must be square"
   pixelPtr <- surfacePixels imgSurface
-  pixels <- sequence [getPixel pixelPtr x | x <- [0..(imgW*imgH) - 1]]
+  pixels <- sequence [getPixel imgSurface pixelPtr x y
+                     | x <- [0..imgW - 1]
+                     , y <- [0..imgH - 1]
+                     ]
   pure $ WFC.textureFromList (fromIntegral imgW) pixels
 
 toSurface :: WFC.Texture CUInt -> IO Surface
@@ -94,10 +99,15 @@ toSurface wfcTexture = do
     sequence_ [setPixel pixelPtr ((fromIntegral y * twI) + fromIntegral x) v | ((x, y), v) <- Array.assocs wfcTexture.getTexture]
   pure output
 
-getPixel :: Ptr () -> CInt -> IO CUInt
-getPixel voidPixelPtr ix = do
-  let pixelPtr = castPtr @() @CUInt voidPixelPtr
-  peekElemOff pixelPtr (fromIntegral ix)
+getPixel :: Surface -> Ptr () -> CInt -> CInt -> IO CUInt
+getPixel (Surface surfacePtr _) voidPixelPtr x y = do
+  -- https://github.com/haskell-game/sdl2/issues/175
+  rawSurface <- peek surfacePtr
+  rawFormat <- peek $ Raw.surfaceFormat rawSurface
+  let bpp = rawFormat.pixelFormatBytesPerPixel
+      pixelPtr = castPtr @() @CUInt voidPixelPtr
+      pitch = Raw.surfaceW rawSurface * fromIntegral bpp
+  peekByteOff pixelPtr (fromIntegral y * fromIntegral pitch + fromIntegral x * fromIntegral bpp)
 
 setPixel :: Ptr CUInt -> Int -> CUInt -> IO ()
 setPixel = pokeByteOff
