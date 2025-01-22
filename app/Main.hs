@@ -9,7 +9,10 @@ module Main (main) where
 import qualified Algorithm.WaveFunctionCollapse as WFC
 import Control.Exception
 import Control.Monad (unless)
+import Control.Monad.IO.Class
 import qualified Data.Array as Array
+import qualified Data.List as List
+import Data.Function (on)
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
@@ -42,9 +45,9 @@ main = do
   renderer <- createRenderer window (-1) defaultRenderer
   img <- Image.load options.image
 
-  inputTexture <- fromSurface img
+  (inputTexture, pixelFormat) <- fromSurface img
 
-  img' <- toSurface inputTexture
+  img' <- toSurface inputTexture pixelFormat
   imgTexture <- createTextureFromSurface renderer img'
   appLoop imgTexture renderer
 
@@ -80,9 +83,12 @@ appLoop imgTexture renderer = do
   unless qPressed (appLoop imgTexture renderer)
 
 -- 32-bit packed pixel format R G B A
-fromSurface :: Surface -> IO (WFC.Texture CInt)
+fromSurface :: Surface -> IO (WFC.Texture CUInt, SDL.PixelFormat)
 fromSurface img = withSurface img $ \imgSurface -> do
   (V2 imgW imgH) <- surfaceDimensions imgSurface
+  (SurfacePixelFormat surfaceFormatPtr) <- surfaceFormat img
+  rawPixelFormat <- peek surfaceFormatPtr
+  pixelFormat <- fromRawPixelFormat rawPixelFormat
   print (imgW, imgH)
   unless (imgW == imgH) $ error "Input image must be square"
   pixelPtr <- surfacePixels imgSurface
@@ -90,32 +96,50 @@ fromSurface img = withSurface img $ \imgSurface -> do
                      | y <- [0..imgW - 1]
                      , x <- [0..imgH - 1]
                      ]
-  pure $ WFC.textureFromList (fromIntegral imgW) pixels
+  pure (WFC.textureFromList (fromIntegral imgW) pixels, pixelFormat)
 
-toSurface :: WFC.Texture CInt -> IO Surface
-toSurface wfcTexture = do
+toSurface :: WFC.Texture CUInt -> SDL.PixelFormat -> IO Surface
+toSurface wfcTexture pixelFormat = do
   let (_, (tw, th)) = Array.bounds wfcTexture.getTexture
-  output <- createRGBSurface (fromIntegral <$> V2 tw th) RGBA8888
+  output <- createRGBSurface (fromIntegral <$> V2 tw th) pixelFormat
   bracket_ (lockSurface output) (unlockSurface output) $ do
     voidPixelPtr <- surfacePixels output
-    let pixelPtr = castPtr @() @CInt voidPixelPtr
-    sequence_ [setPixel output pixelPtr (fromIntegral x) (fromIntegral y) v | ((x, y), v) <- Array.assocs wfcTexture.getTexture]
+    let pixelPtr = castPtr @() @CUInt voidPixelPtr
+    sequence_ [ setPixel output pixelPtr (fromIntegral x) (fromIntegral y) v
+              | ((x, y), v) <- List.sortBy yComponent $ Array.assocs wfcTexture.getTexture
+              ]
   pure output
+  where
+    yComponent :: ((Word, Word), CUInt) -> ((Word, Word), CUInt) -> Ordering
+    yComponent = compare `on` (snd . fst)
 
-getPixel :: Surface -> Ptr () -> CInt -> CInt -> IO CInt
+getPixel :: Surface -> Ptr () -> CInt -> CInt -> IO CUInt
 getPixel (Surface surfacePtr _) voidPixelPtr x y = do
   -- https://github.com/haskell-game/sdl2/issues/175
   rawSurface <- peek surfacePtr
   rawFormat <- peek $ Raw.surfaceFormat rawSurface
   let bpp = rawFormat.pixelFormatBytesPerPixel
-      pixelPtr = castPtr @() @CInt voidPixelPtr
+      pixelPtr = castPtr @() @CUInt voidPixelPtr
       pitch = Raw.surfaceW rawSurface * fromIntegral bpp
-  peekByteOff pixelPtr (fromIntegral y * fromIntegral pitch + fromIntegral x * fromIntegral bpp)
+      yByteOffset = fromIntegral y * fromIntegral pitch
+      xByteOffset = fromIntegral x * fromIntegral bpp
+  peekByteOff pixelPtr (yByteOffset + xByteOffset)
 
-setPixel :: Surface -> Ptr CInt -> CInt -> CInt -> CInt -> IO ()
+setPixel :: Surface -> Ptr CUInt -> CInt -> CInt -> CUInt -> IO ()
 setPixel (Surface surfacePtr _) pixelPtr x y pixelData = do
   rawSurface <- peek surfacePtr
   rawFormat <- peek $ Raw.surfaceFormat rawSurface
   let bpp = rawFormat.pixelFormatBytesPerPixel
       pitch = Raw.surfaceW rawSurface * fromIntegral bpp
-  pokeByteOff pixelPtr (fromIntegral y * fromIntegral pitch + fromIntegral x * fromIntegral bpp) pixelData
+      yByteOffset = fromIntegral y * fromIntegral pitch
+      xByteOffset = fromIntegral x * fromIntegral bpp
+  pokeByteOff pixelPtr (yByteOffset + xByteOffset) pixelData
+
+fromRawPixelFormat :: MonadIO m => Raw.PixelFormat -> m SDL.PixelFormat
+fromRawPixelFormat rawFormat
+  = masksToPixelFormat 32
+  $ SDL.V4
+    (Raw.pixelFormatRMask rawFormat)
+    (Raw.pixelFormatGMask rawFormat)
+    (Raw.pixelFormatBMask rawFormat)
+    (Raw.pixelFormatAMask rawFormat)
