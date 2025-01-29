@@ -47,24 +47,24 @@ main = do
 
   (inputTexture, pixelFormat) <- fromSurface img
 
-  img' <- toSurface inputTexture pixelFormat
-  imgTexture <- createTextureFromSurface renderer img'
-  appLoop imgTexture renderer
+  -- img' <- toSurface inputTexture pixelFormat
+  -- imgTexture <- createTextureFromSurface renderer img'
+  -- appLoop imgTexture renderer
 
-  -- let patternResults = WFC.patterns inputTexture 3
-  --     inputWaveState = WFC.mkWaveState (15, 15) 100 patternResults
-  --     outputWaveState = WFC.runWave inputWaveState WFC.collapseWave
+  let patternResults = WFC.patterns inputTexture 3
+      inputWaveState = WFC.mkWaveState (15, 15) 100 patternResults
+      outputWaveState = WFC.runWave inputWaveState WFC.collapseWave
 
-  -- case WFC.mkOutputTexture patternResults outputWaveState of
-  --   Left err -> putStrLn err >> destroyWindow window
-  --   Right outputWFCTexture -> do
-  --     print outputWFCTexture
-  --     --img' <- toSurface outputWFCTexture
-  --     img' <- toSurface inputTexture
+  case WFC.mkOutputTexture patternResults outputWaveState of
+    Left err -> putStrLn err >> destroyWindow window
+    Right outputWFCTexture -> do
+      print outputWFCTexture
+      --img' <- toSurface outputWFCTexture
+      img' <- toSurface outputWFCTexture pixelFormat
 
-  --     imgTexture <- createTextureFromSurface renderer img'
-  --     appLoop imgTexture renderer
-  --     destroyWindow window
+      imgTexture <- createTextureFromSurface renderer img'
+      appLoop imgTexture renderer
+      destroyWindow window
 
 appLoop :: Texture -> Renderer -> IO ()
 appLoop imgTexture renderer = do
@@ -89,14 +89,14 @@ fromSurface img = withSurface img $ \imgSurface -> do
   (SurfacePixelFormat surfaceFormatPtr) <- surfaceFormat img
   rawPixelFormat <- peek surfaceFormatPtr
   pixelFormat <- fromRawPixelFormat rawPixelFormat
-  print (imgW, imgH)
   unless (imgW == imgH) $ error "Input image must be square"
-  pixelPtr <- surfacePixels imgSurface
-  pixels <- sequence [getPixel imgSurface pixelPtr x y
-                     | y <- [0..imgW - 1]
-                     , x <- [0..imgH - 1]
-                     ]
-  pure (WFC.textureFromList (fromIntegral imgW) pixels, pixelFormat)
+  bracket_ (lockSurface img) (unlockSurface img) $ do
+    pixelPtr <- surfacePixels imgSurface
+    pixels <- sequence [getPixel imgSurface pixelPtr x y
+                       | y <- [0..imgW - 1]
+                       , x <- [0..imgH - 1]
+                       ]
+    pure (WFC.textureFromList (fromIntegral imgW) pixels, pixelFormat)
 
 toSurface :: WFC.Texture CUInt -> SDL.PixelFormat -> IO Surface
 toSurface wfcTexture pixelFormat = do
