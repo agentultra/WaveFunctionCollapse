@@ -5,9 +5,10 @@
 
 import Control.Monad
 import qualified Data.Array as Array
-import Data.List (foldl')
+import Data.List (foldl', sort)
 import qualified Data.Heap as Heap
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Algorithm.WaveFunctionCollapse
@@ -22,7 +23,7 @@ main = hspec $ do
       (length . patternResultPatterns $ patterns tex 3) `shouldBe` fromIntegral ((textureSize tex) * (textureSize tex))
 
     context "Given a sub pattern from the 0,0 index of the source texture" $ do
-      fit "should return the matching values for the sub-pattern indices" $ do
+      it "should return the matching values for the sub-pattern indices" $ do
         let tex = textureFromList @Int 4
                   [ 0, 1, 0, 0
                   , 0, 1, 0, 0
@@ -32,15 +33,23 @@ main = hspec $ do
             -- This only works for the top-left sub-pattern from 0,0
             -- in the source texture
             pat = head . patternResultPatterns $ patterns tex 3
-            patIxs = Array.indices pat.getPattern                 -- The pattern indices should
-            texValues = reverse $ foldl' (getValue tex) [] patIxs -- coincide with the source
-            getValue (Texture t) vs ix = t Array.! ix : vs        -- texture indices
+            patIxs = Array.indices pat.getPattern          -- The pattern indices should
+            texValues = foldl' (getValue tex) [] patIxs    -- coincide with the source
+            getValue (Texture t) vs ix = t Array.! ix : vs -- texture indices
 
-        Debug.traceM ("WAAAAAT: " ++ show patIxs)
-        Debug.traceM ("WAT: " ++ show pat)
-        Debug.traceM ("WAT2: " ++ show tex)
-        Debug.traceM ("texValues: " ++ show texValues)
         texValues `shouldBe` Array.elems pat.getPattern
+
+    context "Given an input texture" $ do
+      it "should return distinct patterns" $ do
+        let tex = textureFromList @Int 4
+                  [ 0, 1, 0, 0
+                  , 0, 1, 0, 0
+                  , 1, 1, 1, 1
+                  , 0, 1, 0, 0
+                  ]
+            allPatterns = patternResultPatterns $ patterns tex 3
+            uniquePatterns = Set.toList . Set.fromList $ allPatterns
+        sort allPatterns `shouldBe` sort uniquePatterns
 
   describe "Pattern" $ do
     prop "full clockwise rotation" $ \(pat :: Pattern Int) ->

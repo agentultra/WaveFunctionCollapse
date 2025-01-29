@@ -20,6 +20,8 @@ import Data.Maybe
 import System.Random
 import Test.QuickCheck
 
+import qualified Debug.Trace as Debug
+
 data Pattern a
   = Pattern
   { patternSize :: Word
@@ -78,7 +80,7 @@ textureSize
   . Array.bounds
   . getTexture
 
-patterns :: Texture a -> Word -> PatternResult a
+patterns :: Show a => Texture a -> Word -> PatternResult a
 patterns texture subPatternSize
   | subPatternSize == 0 = PatternResult [] 0
   | otherwise =
@@ -88,14 +90,15 @@ patterns texture subPatternSize
              ]
     in PatternResult ps (length ps)
   where
-    extractPattern :: Texture a -> (Word, Word) -> Word -> Pattern a
-    extractPattern (Texture tex) (x, y) size =
+    extractPattern :: Show a => Texture a -> (Word, Word) -> Word -> Pattern a
+    extractPattern t@(Texture tex) (x, y) size =
       let w = size - 1
-          indices = [ (b `mod` size, a `mod` size) | a <- [x..x+w], b <- [y..y+w] ]
+          texSize = textureSize t
+          indices = [ (b `mod` texSize, a `mod` texSize) | a <- [x..x+w], b <- [y..y+w] ]
           textureElems = foldl' (accumElems tex) [] indices
       in Pattern size . Array.array ((0, 0), (w, w)) . rows size $ textureElems
 
-    accumElems :: Array (Word, Word) a -> [a] -> (Word, Word) -> [a]
+    accumElems :: Show a => Array (Word, Word) a -> [a] -> (Word, Word) -> [a]
     accumElems tex acc ix = (tex Array.! ix) : acc
 
 data Direction
@@ -529,7 +532,7 @@ runWave initState = (`execState` initState)
 collapseWave :: State WaveState ()
 collapseWave = do
   remainingCells <- gets waveStateRemainingCells
-  when (remainingCells > 0) $ do
+  Debug.trace ("collapseWave: " ++ show remainingCells) $ when (remainingCells > 0) $ do
     propagateCollapse
     collapseWave
 
@@ -614,6 +617,7 @@ collapseAt cellIx = do
 propagate :: State WaveState ()
 propagate = do
   removal <- popRemoveStack
+  debugStack <- gets waveStateRemovePatternStack
   adjacencyRules <- gets waveStateAdjacencyRules
   case removal of
     Nothing -> pure ()
@@ -631,8 +635,8 @@ propagate = do
                 error $ "CONTRADICTION propagate: " ++ (show neighbourCoord) ++ " patternIx " ++ show compatiblePattern
               addEntropyCell neighbourCoord
               pushRemovals [RemovePattern compatiblePattern neighbourCoord]
-          modifyCellAt neighbourCoord
-            (decrementNeighbourEnablerCounts compatiblePattern enablerCounts dir)
+              modifyCellAt neighbourCoord
+                (decrementNeighbourEnablerCounts compatiblePattern enablerCounts dir)
         propagate
   where
     decrementNeighbourEnablerCounts
@@ -643,11 +647,13 @@ propagate = do
       -> Either String GridCell
     decrementNeighbourEnablerCounts _ _ _ cell@(Right _) = pure cell
     decrementNeighbourEnablerCounts patternIx enablerCounts dir (Left cell) =
-      let cell' = Left cell
-                  { cellPatternEnablerCounts =
-                    cell.cellPatternEnablerCounts Array.// [(patternIx, decrementDirection enablerCounts dir)]
-                  }
+      let counts = cell.cellPatternEnablerCounts Array.// [(patternIx, decrementDirection enablerCounts dir)]
+          cell' = Left cell { cellPatternEnablerCounts = counts }
       in Right cell'
+
+      where
+        isNegativeCount :: PatternEnablerCount -> Bool
+        isNegativeCount (PatternEnablerCount cs) = all (>= 0) . Array.elems $ cs
 
     removePatternFromCell :: PatternIndex -> GridCell -> Either String GridCell
     removePatternFromCell _ (Right _) = error "removePatternFromCell: tried to remove from a collapsed cell"

@@ -52,7 +52,7 @@ main = do
   -- appLoop imgTexture renderer
 
   let patternResults = WFC.patterns inputTexture 3
-      inputWaveState = WFC.mkWaveState (15, 15) 100 patternResults
+      inputWaveState = WFC.mkWaveState (5, 5) 100 patternResults
       outputWaveState = WFC.runWave inputWaveState WFC.collapseWave
 
   case WFC.mkOutputTexture patternResults outputWaveState of
