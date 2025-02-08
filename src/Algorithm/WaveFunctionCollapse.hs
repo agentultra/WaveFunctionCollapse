@@ -133,16 +133,10 @@ overlaps p1 p2 = \case
     in all elemEq $ zip p1Values p2Values
   Right' ->
     let p1Values = catMaybes [ patternValue p1 x y | x <- [0..patternSize p1 - 2], y <- [0..patternSize p1 - 1] ]
-        p2Values = catMaybes [ patternValue p2 x y | x <- [0..patternSize p2 - 2], y <- [0..patternSize p2 - 1] ]
-    in all elemEq $ zip p1Values p2Values
-  Down ->
-    let p1Values = catMaybes [ patternValue p1 x y | x <- [0..patternSize p1 - 1], y <- [1..patternSize p1 - 1] ]
-        p2Values = catMaybes [ patternValue p2 x y | x <- [0..patternSize p2 - 1], y <- [0..patternSize p2 - 2] ]
-    in all elemEq $ zip p1Values p2Values
-  Left' ->
-    let p1Values = catMaybes [ patternValue p1 x y | x <- [1..patternSize p1 - 2], y <- [0..patternSize p1 - 1] ]
         p2Values = catMaybes [ patternValue p2 x y | x <- [1..patternSize p2 - 1], y <- [0..patternSize p2 - 1] ]
     in all elemEq $ zip p1Values p2Values
+  Down -> overlaps p2 p1 Up      -- It is equal to overlap up of p1 to down of p2; and down of p2 to up of p1
+  Left' -> overlaps p2 p1 Right' -- It is equal to overlap right of p1 to left of p2; and left of p2 to right of p1
   where
     elemEq (x, y) = x == y
 
